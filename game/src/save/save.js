@@ -3,7 +3,7 @@
 // also records whether the player was driving and which car, so loading while
 // driving no longer drops the player on foot (a prototype gap).
 
-import { clamp } from './config.js';
+import { clamp } from '../core/config.js';
 
 export const SAVE_KEY = 'suncoast_heatline_save';
 

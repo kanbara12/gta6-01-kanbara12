@@ -9,65 +9,69 @@
 
 import * as THREE from 'three';
 import { WORLD, clamp, parseQuery } from './config.js';
-import { buildWorld, collidesBuilding, animateOcean } from './world.js';
+import { createRenderer, createEnvironment } from './rendering.js';
+import { loadSettings, saveSettings, applyQualityToDom, presetFor } from './settings.js';
+import { buildWorld, collidesBuilding, animateOcean } from '../world/world.js';
 import {
   createCharacter, animateWalk, animateIdle,
   spawnPedestrians, updatePedestrians, spawnEnemies, updateEnemies,
-} from './characters.js';
+  setWeapon, setAiming, playShoot, playReload, playJump,
+  playEnterVehicle, playExitVehicle, updateCharacterAnims,
+} from '../characters/characters.js';
 import {
-  makeCar, animateCar, spawnTraffic, updateTraffic, updatePolice, spawnPoliceCar,
-} from './vehicles.js';
+  makeCar, spawnTraffic, updateTraffic,
+  driveVehicle, vehicleCameraParams, setHeadlights, attachHeadlightBeams,
+} from '../vehicles/vehicles.js';
+import { resetDriveState } from '../vehicles/driving.js';
+import { updatePolice, spawnPoliceCar } from '../AI/police.js';
+import {
+  WEAPONS,
+  fire as fireModule,
+  reloadWeapon as reloadWeaponModule,
+  updateBullets as updateBulletsModule,
+} from '../combat/combat.js';
 import {
   GANG_ZONE, MISSION_POINTS, createMissionMarker, animateMarker,
   updateMissions, placeMarker,
-} from './missions.js';
-import { AudioEngine } from './audio.js';
+} from '../missions/missions.js';
+import { AudioEngine } from '../audio/audio.js';
 import { createInput } from './input.js';
-import { showToast, tickToast, setHudVisible, updateHud, drawMinimap } from './hud.js';
-import { saveGame, loadGame } from './save.js';
-import { stageShot } from './shots.js';
+import { showToast, tickToast, setHudVisible, updateHud, drawMinimap } from '../UI/hud.js';
+import { saveGame, loadGame } from '../save/save.js';
+import { stageShot } from '../UI/shots.js';
 
 const $ = (id) => document.getElementById(id);
 const query = parseQuery();
 
-// ---------------------------------------------------------------- renderer
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87b7c8);
-scene.fog = new THREE.Fog(0x9fc4cf, 105, 320);
-const camera = new THREE.PerspectiveCamera(68, innerWidth / innerHeight, 0.1, 900);
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.7));
-renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFShadowMap;
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.08;
-$('game').appendChild(renderer.domElement);
+// Settings (persisted) + URL overrides for testing (?quality= ?time= ?rain=).
+// The query wins for this session only; it is never written to localStorage.
+const settings = loadSettings();
+if (query.quality && presetFor(query.quality)) settings.quality = query.quality;
+if (query.time) settings.timeOfDay = query.time;
+if (query.rain) settings.rain = query.rain;
 
-scene.add(new THREE.HemisphereLight(0xd9f5ff, 0x38404a, 2.0));
-const sun = new THREE.DirectionalLight(0xffe1b2, 2.4);
-sun.position.set(-65, 110, 45);
-sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.left = -170;
-sun.shadow.camera.right = 170;
-sun.shadow.camera.top = 170;
-sun.shadow.camera.bottom = -170;
-scene.add(sun);
-// Cool fill from the east so the shaded faces of the waterfront towers are
-// readable instead of flat silhouettes.
-const fill = new THREE.DirectionalLight(0xbfd9ff, 0.7);
-fill.position.set(120, 60, -40);
-scene.add(fill);
+// ---------------------------------------------------------------- renderer
+// (rendering.js owns the renderer, lights, shadows, time-of-day, rain and
+// contact shadows; main.js only wires the environment into the loop.)
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(68, innerWidth / innerHeight, 0.1, 900);
+const renderer = createRenderer(settings);
+$('game').appendChild(renderer.domElement);
+const env = createEnvironment(scene, renderer, settings, null);
+applyQualityToDom(presetFor(settings.quality));
 
 // ---------------------------------------------------------------- state
 const { world, buildings, ocean } = buildWorld(scene);
-
-const WEAPONS = {
-  pistol: { id: 'pistol', name: 'Pistol', magSize: 12, fireRate: 0.28, damage: 1, bulletSpeed: 48 },
-  smg: { id: 'smg', name: 'SMG', magSize: 30, fireRate: 0.09, damage: 1, bulletSpeed: 60 },
-};
+env.world = world; // lets env.setWet prefer a world.setWet hook if one ships
+// World time/weather hooks (World Specialist): if world.js exports
+// setTimeOfDay(hour)/setWet(amount), bind them so one call drives both
+// the sky dome (world) and the lights/fog (rendering). Dynamic import so
+// a mid-rewrite world.js can never break the game load; missing hooks
+// simply leave the rendering-side behaviour in place.
+import('../world/world.js').then((w) => {
+  if (typeof w.setTimeOfDay === 'function') env.worldSetTimeOfDay = w.setTimeOfDay;
+  if (typeof w.setWet === 'function') env.worldSetWet = w.setWet;
+}).catch(() => { /* world hooks unavailable: rendering fallback stands */ });
 
 const G = {
   scene, camera, renderer, buildings, ocean,
@@ -100,6 +104,9 @@ const G = {
   weapon: { ...WEAPONS.pistol, mag: 12, reserve: Infinity },
   hasSmg: false,
   lastShotAt: 0,
+  reloading: false,
+  reloadTimer: 0,
+  recoil: 0,
   policeSpawn: 0,
   gunfireEvent: null,
   fps: 0,
@@ -113,10 +120,47 @@ const G = {
   },
 };
 
-G.player.position.set(-5, 0, 0);
-scene.add(G.player);
+// ---- combat hooks (combat.js calls main.js-owned state through G).
+// triggerWanted is a function declaration below (hoisted), updateHud is
+// imported above, so these assignments are valid here.
+G.triggerWanted = (n) => triggerWanted(n);
+G.updateHud = () => updateHud(G);
+
+// ---- rendering hooks (rendering.js + settings.js). Used by the settings
+// panel (index.html), the ?shot= scenes (shots.js) and the test harness.
+// Defined before the shot-mode block so stageShot can call setTimeOfDay.
+G.settings = settings;
+G.renderEnv = env;
+G.armor = 0; // no armor pickup ships yet; HUD shows 0% until one does
+G.frameMs = 0;
+G.setQuality = (name) => {
+  settings.quality = name;
+  saveSettings(settings);
+  env.setQuality(name, (msg) => showToast(msg));
+};
+G.setTimeOfDay = (name, instant = false) => {
+  settings.timeOfDay = name;
+  saveSettings(settings);
+  env.setTimeOfDay(name, instant);
+};
+G.setWet = (v) => {
+  settings.rain = v;
+  saveSettings(settings);
+  env.setWet(v);
+  G.audio.setRain(v);
+};
+G.setRain = G.setWet;
+// Audio volumes from the persisted settings (stored until ensure() builds
+// the context on the first user gesture).
+G.audio.setVolumes({ master: settings.master, music: settings.music, sfx: settings.sfx });
+G.audio.setMusicEnabled(settings.musicOn);
+if (settings.rain > 0) G.setWet(settings.rain); // rain visuals + wet roads + rain audio
+
+G.player.position.set(-5, 0, 0);scene.add(G.player);
 G.playerCar.position.set(4, 0, 2);
 scene.add(G.playerCar);
+attachHeadlightBeams(G.playerCar);
+setHeadlights(G.playerCar, true);
 G.traffic = spawnTraffic(scene);
 G.enemies = spawnEnemies(scene, GANG_ZONE);
 G.peds = spawnPedestrians(scene, buildings);
@@ -149,8 +193,8 @@ function onKey(code, repeat) {
     updateHud(G);
   }
   if (code === 'KeyR' && !repeat) reloadWeapon();
-  if (code === 'Digit1' && !repeat) { G.selectWeapon('pistol'); updateHud(G); }
-  if (code === 'Digit2' && !repeat && G.hasSmg) { G.selectWeapon('smg'); updateHud(G); }
+  if (code === 'Digit1' && !repeat) { G.selectWeapon('pistol'); setWeapon(G.player, 'pistol'); updateHud(G); }
+  if (code === 'Digit2' && !repeat && G.hasSmg) { G.selectWeapon('smg'); setWeapon(G.player, 'smg'); updateHud(G); }
 }
 
 G.input = createInput(renderer.domElement, {
@@ -158,6 +202,15 @@ G.input = createInput(renderer.domElement, {
   onKey,
   onFire: () => fire(),
 });
+
+// Aim stance follows the HELD fire button (not pointer lock alone — the
+// walk/run clips must keep playing while the player moves). input.js only
+// reports the click, not the hold, so the hold state lives here.
+let firing = false;
+let aiming = false;
+addEventListener('mousedown', (e) => { if (e.button === 0) firing = true; });
+addEventListener('mouseup', (e) => { if (e.button === 0) firing = false; });
+addEventListener('blur', () => { firing = false; });
 
 $('saveBtn').addEventListener('click', () => saveGame(G));
 $('loadBtn').addEventListener('click', () => loadGame(G));
@@ -185,107 +238,47 @@ addEventListener('resize', () => {
 });
 
 // ---------------------------------------------------------------- combat
+// Shooting lives in src/combat/combat.js; these wrappers keep the existing
+// call sites (onKey KeyR, input onFire, animate loop) unchanged, and add
+// the character animation hooks (shoot/reload poses, on foot only).
 function reloadWeapon() {
-  const w = G.weapon;
-  if (w.mag === w.magSize) return;
-  if (w.reserve === Infinity) {
-    w.mag = w.magSize;
-  } else {
-    const need = w.magSize - w.mag;
-    const take = Math.min(need, w.reserve);
-    w.mag += take;
-    w.reserve -= take;
-  }
-  G.audio.click();
-  updateHud(G);
+  if (reloadWeaponModule(G)) playReload(G.player);
 }
-
-const _tmpV = new THREE.Vector3();
 
 function fire() {
-  if (!G.gameStarted || G.gameOver) return;
-  const now = performance.now();
-  if (now - G.lastShotAt < G.weapon.fireRate * 1000) return;
-  if (G.weapon.mag <= 0) {
-    reloadWeapon();
-    return;
-  }
-  G.lastShotAt = now;
-  G.weapon.mag -= 1;
-  const origin = G.actorPosition().clone();
-  origin.y += G.currentCar ? 1.25 : 1.65;
-  const aimYaw = G.currentCar ? G.currentCar.rotation.y : G.input.cameraYaw;
-  const dir = new THREE.Vector3(Math.sin(aimYaw), 0, Math.cos(aimYaw));
-  const mesh = new THREE.Mesh(
-    new THREE.SphereGeometry(0.12, 8, 6),
-    new THREE.MeshBasicMaterial({ color: 0xffd36b }),
-  );
-  mesh.position.copy(origin).addScaledVector(dir, 1.2);
-  scene.add(mesh);
-  G.bullets.push({ mesh, dir, life: 1.7, speed: G.weapon.bulletSpeed, damage: G.weapon.damage });
-  G.audio.ensure();
-  G.audio.gunshot();
-  G.gunfireEvent = { x: origin.x, z: origin.z };
-  triggerWanted(1);
-  updateHud(G);
+  if (fireModule(G) && !G.currentCar) playShoot(G.player);
 }
 
-function updateBullets(dt) {
-  for (let i = G.bullets.length - 1; i >= 0; i -= 1) {
-    const b = G.bullets[i];
-    b.life -= dt;
-    b.mesh.position.addScaledVector(b.dir, b.speed * dt);
-    let hit = false;
-    for (const e of G.enemies) {
-      if (!e.userData.alive) continue;
-      _tmpV.copy(e.position);
-      _tmpV.y += 1;
-      if (b.mesh.position.distanceTo(_tmpV) < 1.1) {
-        e.userData.health -= b.damage;
-        hit = true;
-        if (e.userData.health <= 0) {
-          e.userData.alive = false;
-          e.visible = false;
-          G.kills += 1;
-          G.money += 150;
-          showToast('TARGET DOWN • +$150');
-          G.audio.chime();
-        }
-        break;
-      }
-    }
-    if (hit || b.life <= 0 || b.mesh.position.length() > 400) {
-      scene.remove(b.mesh);
-      G.bullets.splice(i, 1);
-    }
-  }
-}
+function updateBullets(dt) { updateBulletsModule(G, dt); }
 
 // ---------------------------------------------------------------- vehicles
 function tryEnterExit() {
+  // A vehicle tween owns the player for ~1 s; ignore E until it finishes.
+  if (G.player.userData.vehicleAnim) return;
   if (G.currentCar) {
-    // Step out on the side that is not inside a building.
-    const rot = G.currentCar.rotation.y;
-    for (const side of [1, -1]) {
-      const px = G.currentCar.position.x + Math.cos(rot) * 2.3 * side;
-      const pz = G.currentCar.position.z - Math.sin(rot) * 2.3 * side;
-      if (!collidesBuilding(buildings, px, pz, 0.65)) {
+    const car = G.currentCar;
+    playExitVehicle(G.player, car, () => {
+      // The tween ends at the side spot (2.3 u). If that spot landed
+      // inside a building (side 1 can be blocked), fall back to the
+      // other side, then the rear — the same spots v1 used.
+      const rot = car.rotation.y;
+      let px = G.player.position.x;
+      let pz = G.player.position.z;
+      if (collidesBuilding(buildings, px, pz, 0.65)) {
+        const altX = car.position.x - Math.cos(rot) * 2.3;
+        const altZ = car.position.z + Math.sin(rot) * 2.3;
+        if (!collidesBuilding(buildings, altX, altZ, 0.65)) {
+          px = altX; pz = altZ;
+        } else {
+          px = car.position.x - Math.sin(rot) * 3;
+          pz = car.position.z - Math.cos(rot) * 3;
+        }
         G.player.position.set(px, 0, pz);
-        G.player.visible = true;
-        G.currentCar = null;
-        showToast('ON FOOT');
-        return;
       }
-    }
-    // Both sides blocked: exit at the rear instead.
-    G.player.position.set(
-      G.currentCar.position.x - Math.sin(rot) * 3,
-      0,
-      G.currentCar.position.z - Math.cos(rot) * 3,
-    );
-    G.player.visible = true;
-    G.currentCar = null;
-    showToast('ON FOOT');
+      G.player.visible = true;
+      G.currentCar = null;
+      showToast('ON FOOT');
+    });
     return;
   }
   let nearest = null;
@@ -295,10 +288,16 @@ function tryEnterExit() {
     if (d < dist) { dist = d; nearest = c; }
   }
   if (nearest) {
-    G.currentCar = nearest;
-    G.player.visible = false;
-    showToast('VEHICLE TAKEN • POLICE ALERT');
-    triggerWanted(1);
+    // Keep the player visible during the entry animation; the car is
+    // taken only when the tween finishes (onDone).
+    G.player.visible = true;
+    playEnterVehicle(G.player, nearest, () => {
+      G.currentCar = nearest;
+      resetDriveState(nearest);
+      G.player.visible = false;
+      showToast('VEHICLE TAKEN • POLICE ALERT');
+      triggerWanted(1);
+    });
   } else {
     showToast('NO VEHICLE IN REACH');
   }
@@ -312,28 +311,27 @@ function triggerWanted(n = 1) {
 
 function moveActor(dt) {
   const keys = G.input.keys;
+  // A vehicle entry/exit tween owns the player for ~1 s; input must not
+  // fight it (the tween is advanced by updateCharacterAnims in the loop).
+  if (G.player.userData.vehicleAnim) return;
   if (G.currentCar) {
     const car = G.currentCar;
-    const u = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
-    car.userData.speed += ((keys.KeyW ? 17 : 0) - (keys.KeyS ? 23 : 0) - car.userData.speed * 1.5) * dt;
-    car.userData.speed = clamp(car.userData.speed, -11, 25);
-    const turn = (keys.KeyA ? 1 : 0) - (keys.KeyD ? 1 : 0);
-    car.rotation.y += turn * dt * (1.65 + Math.abs(car.userData.speed) * 0.045) * Math.sign(car.userData.speed || 1);
-    const dx = Math.sin(car.rotation.y) * car.userData.speed * dt;
-    const dz = Math.cos(car.rotation.y) * car.userData.speed * dt;
-    // East edge stops at the beach (x = 150): cars never drive into the ocean.
-    const nx = clamp(car.position.x + dx, -WORLD.half, 150);
-    const nz = clamp(car.position.z + dz, -WORLD.half, WORLD.half);
-    if (!collidesBuilding(buildings, nx, nz, 1.6)) {
-      car.position.x = nx;
-      car.position.z = nz;
-    } else {
-      car.userData.speed *= -0.22;
-      car.userData.health -= Math.abs(car.userData.speed) * 0.8;
+    const result = driveVehicle(car, {
+      forward: !!keys.KeyW,
+      back: !!keys.KeyS,
+      left: !!keys.KeyA,
+      right: !!keys.KeyD,
+      handbrake: !!keys.Space, // Space is jump on foot only, free in a car
+    }, dt, {
+      collides: (x, z, r) => collidesBuilding(buildings, x, z, r),
+    });
+    if (result.collided && result.impact > 3) {
+      showToast('CRASH • VEHICLE ' + Math.round(car.userData.health) + '%');
     }
     playerYaw = car.rotation.y;
-    animateCar(car, dt, turn);
-    G.audio.setEngine(Math.abs(car.userData.speed) / 25, true);
+    G.audio.setEngine(
+      Math.abs(car.userData.speed) / (car.userData.spec?.topSpeed || 25), true,
+    );
   } else {
     const forward = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
     const side = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
@@ -364,7 +362,7 @@ function moveActor(dt) {
     } else {
       animateIdle(G.player);
     }
-    if (keys.Space && onGround) { verticalVelocity = 7; onGround = false; }
+    if (keys.Space && onGround) { verticalVelocity = 7; onGround = false; playJump(G.player); }
     verticalVelocity -= 19 * dt;
     G.player.position.y += verticalVelocity * dt;
     if (G.player.position.y <= 0) { G.player.position.y = 0; verticalVelocity = 0; onGround = true; }
@@ -415,8 +413,11 @@ function updateCamera(dt) {
   }
   const p = G.actorPosition();
   const yaw = G.currentCar ? G.currentCar.rotation.y : G.input.cameraYaw;
-  const distance = G.currentCar ? 9 : 7.2;
-  const height = G.currentCar ? 4.8 : 4.1;
+  const params = G.currentCar
+    ? vehicleCameraParams(G.currentCar)
+    : { distance: 7.2, height: 4.1, fov: 68, lookHeight: 1.6 };
+  const distance = params.distance;
+  const height = params.height;
   const desired = new THREE.Vector3(
     p.x - Math.sin(yaw) * distance,
     p.y + height,
@@ -430,7 +431,11 @@ function updateCamera(dt) {
   } else {
     camera.position.lerp(desired, 1 - Math.pow(0.001, dt));
   }
-  camera.lookAt(new THREE.Vector3(p.x, p.y + (G.currentCar ? 1.2 : 1.6), p.z));
+  camera.lookAt(new THREE.Vector3(p.x, p.y + params.lookHeight, p.z));
+  if (Math.abs(camera.fov - params.fov) > 0.05) {
+    camera.fov += (params.fov - camera.fov) * Math.min(1, dt * 3);
+    camera.updateProjectionMatrix();
+  }
 }
 
 // ---------------------------------------------------------------- shot mode
@@ -440,6 +445,15 @@ if (query.shot) {
 } else if (query.hideHud) {
   setHudVisible(false);
 }
+
+// ---- day/night cycle: slow automatic advance through the time presets
+// (golden -> dusk -> night -> noon -> golden), one phase per 240 s of
+// play. The cycle always advances FROM the current preset, so a manual
+// choice in the settings panel (or ?time=) is respected as the new phase.
+// Paused on the start screen (gameStarted false) and in ?shot= mode.
+const TIME_CYCLE = ['golden', 'dusk', 'night', 'noon'];
+const TIME_CYCLE_SECONDS = 240;
+let timeCycleTimer = 0;
 
 // ---------------------------------------------------------------- loop
 let last = performance.now();
@@ -462,17 +476,39 @@ function animate(now) {
     fpsFrames = 0;
     fpsTime = 0;
   }
+  G.frameMs = G.frameMs ? G.frameMs * 0.95 + dt * 1000 * 0.05 : dt * 1000;
 
   if (G.gameStarted && !G.gameOver) {
     moveActor(dt);
-    updateTraffic(G.traffic, G.playerCar, dt);
+    // Rig mixer: advanced here ONLY when moveActor did not already do it
+    // (animateWalk/animateIdle advance it on foot). In a car, or during a
+    // vehicle tween, nobody else advances it — without this the rig would
+    // freeze mid-pose and the tween would never run.
+    if (G.currentCar || G.player.userData.vehicleAnim) updateCharacterAnims(G.player, dt);
+    // Aim stance follows the held fire button while on foot and locked.
+    const wantAim = firing && !G.currentCar && document.pointerLockElement === renderer.domElement;
+    if (wantAim !== aiming) { aiming = wantAim; setAiming(G.player, aiming); }
+    updateTraffic(G.traffic, G.currentCar || G.playerCar, dt);
     updatePoliceSpawns(dt);
     updateEnemies(G.enemies, G.actorPosition(), dt, (meleeDt) => { G.health -= meleeDt * 3; });
-    updatePedestrians(G.peds, buildings, dt, G.gunfireEvent);
+    updatePedestrians(G.peds, buildings, dt, G.gunfireEvent, G.traffic, {
+      playerCar: G.currentCar,
+      onWitness: () => triggerWanted(1),
+    });
     G.gunfireEvent = null;
     updateBullets(dt);
     updateMissions(G, dt);
     updateCamera(dt);
+    // Day/night cycle (see TIME_CYCLE below): slow automatic advance
+    // through the time presets, paused in ?shot= mode.
+    if (!G.shotMode) {
+      timeCycleTimer += dt;
+      if (timeCycleTimer >= TIME_CYCLE_SECONDS) {
+        timeCycleTimer = 0;
+        const cur = TIME_CYCLE.indexOf(settings.timeOfDay);
+        G.setTimeOfDay(TIME_CYCLE[(cur + 1) % TIME_CYCLE.length]);
+      }
+    }
     animateMarker(G.marker, dt);
     animateOcean(ocean, now / 1000);
     // SMG pickup.
@@ -480,6 +516,7 @@ function animate(now) {
       smgTaken = true;
       scene.remove(smgCrate);
       G.selectWeapon('smg');
+      setWeapon(G.player, 'smg');
       G.audio.chime();
       showToast('SMG ACQUIRED • PRESS 2 TO EQUIP, R TO RELOAD');
     }
@@ -498,11 +535,16 @@ function animate(now) {
     camera.position.set(0, 13, 23);
     camera.lookAt(0, 0, 0);
   }
+  // Rendering environment: shadow frustum follows the actor, time-of-day
+  // transition, rain, contact shadows, dust, ocean glint.
+  env.update(dt, G.actorPosition(), G);
+  env.updateOcean(ocean);
   renderer.render(scene, camera);
   if (firstFrame) {
     firstFrame = false;
     window.__ready = true;
     window.__game = G;
+    window.dispatchEvent(new Event('suncoast-ready'));
   }
 }
 requestAnimationFrame(animate);

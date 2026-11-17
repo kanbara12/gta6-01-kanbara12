@@ -6,56 +6,90 @@
 <link rel="icon" href="data:,">
 <title>SUNCOAST: HEATLINE — Open World</title>
 <style>
-:root{--cyan:#66e5ff;--gold:#ffd166;--panel:rgba(8,15,25,.78);--line:rgba(112,220,255,.28)}
+:root{--cyan:#66e5ff;--gold:#ffd166;--coral:#ff7a59;--panel:rgba(8,15,25,.78);--line:rgba(112,220,255,.28)}
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07111c;color:#eef8ff;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Arial,sans-serif}
 #game{position:fixed;inset:0}canvas{display:block}
+/* Cheap colour grade: a CSS vignette + warm top glow. Zero GPU cost, no
+   composer pass; toggled per quality preset (body.vignette-on). */
+#vignette{position:fixed;inset:0;pointer-events:none;opacity:0;transition:opacity .4s;background:radial-gradient(ellipse at 50% 42%,transparent 52%,rgba(12,6,18,.42) 100%),linear-gradient(180deg,rgba(255,122,89,.06),transparent 22%)}
+body.vignette-on #vignette{opacity:1}
 #hud{position:fixed;inset:0;pointer-events:none}
 #hud.hidden{display:none}
 .panel{background:linear-gradient(135deg,rgba(8,18,30,.88),rgba(8,18,30,.58));border:1px solid var(--line);box-shadow:0 10px 36px rgba(0,0,0,.22);backdrop-filter:blur(9px);border-radius:12px}
-#brand{position:absolute;left:22px;top:18px;padding:12px 16px;min-width:205px}
+#brand{position:absolute;left:22px;top:18px;padding:12px 16px;min-width:205px;border-top:2px solid var(--coral)}
 #brand .kicker{font-size:9px;letter-spacing:3px;color:var(--cyan);font-weight:800}
 #brand .name{font-size:21px;line-height:1.1;font-weight:950;letter-spacing:1.3px}
 #brand .sub{font-size:9px;color:#9fb7c7;letter-spacing:2px;margin-top:5px}
-#stats{position:absolute;right:20px;top:18px;padding:12px 15px;min-width:200px;text-align:right}
+#stats{position:absolute;right:20px;top:18px;padding:12px 15px;min-width:210px;text-align:right}
 .statline{display:flex;justify-content:space-between;gap:22px;font-size:11px;margin:4px 0;color:#a9c2d3}
 .statline b{color:#fff;font-size:13px;letter-spacing:.5px}
+#cash{color:var(--gold);font-size:15px}
 #wanted{color:var(--gold);letter-spacing:2px}
-#mission{position:absolute;left:22px;top:126px;width:min(340px,calc(100vw - 44px));padding:13px 15px}
+#wanted.hot{color:#ff5268;text-shadow:0 0 12px rgba(255,82,104,.8);animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:.55}}
+#fps{color:#7dd8a8}
+#mission{position:absolute;left:22px;top:126px;width:min(340px,calc(100vw - 44px));padding:13px 15px;border-left:3px solid var(--gold)}
 .eyebrow{font-size:9px;letter-spacing:2px;color:var(--cyan);font-weight:800;text-transform:uppercase}
+#missionStage{float:right;color:var(--gold);letter-spacing:1px}
 #missionTitle{font-weight:850;font-size:15px;margin:5px 0}
 #objective{font-size:11px;line-height:1.45;color:#b8cbd7}
-#toast{position:absolute;left:50%;top:22px;transform:translateX(-50%);padding:10px 16px;max-width:min(500px,90vw);font-size:12px;text-align:center;opacity:0;transition:opacity .25s}
+#toast{position:absolute;left:50%;top:22px;transform:translateX(-50%);padding:10px 16px;max-width:min(500px,90vw);font-size:12px;text-align:center;opacity:0;transition:opacity .25s;border-top:2px solid var(--gold)}
 #toast.show{opacity:1}
-#minimapWrap{position:absolute;right:20px;bottom:20px;width:176px;padding:8px}
+#minimapWrap{position:absolute;left:22px;top:262px;width:176px;padding:8px}
 #minimap{display:block;width:160px;height:160px;border-radius:7px;background:#101e2a}
-#mapLabel{font-size:8px;letter-spacing:2px;color:#9fb7c7;text-align:center;margin-top:5px}
+#mapLabel{font-size:8px;letter-spacing:2px;color:var(--gold);text-align:center;margin-top:5px;font-weight:800}
 #bottom{position:absolute;left:22px;bottom:20px;display:flex;gap:8px;align-items:flex-end}
-#healthBox{width:165px;padding:10px 12px}
+#healthBox{width:185px;padding:10px 12px}
 .smallLabel{font-size:8px;letter-spacing:1.8px;color:#9fb7c7;font-weight:800}
+.smallLabel span{color:#fff;float:right}
 .bar{height:6px;background:#243544;border-radius:8px;overflow:hidden;margin-top:7px}
 #healthFill{height:100%;width:100%;background:linear-gradient(90deg,#5de0ad,#a7f36c);transition:width .2s}
+#healthFill.mid{background:linear-gradient(90deg,#ffd166,#ffb347)}
+#healthFill.low{background:linear-gradient(90deg,#ff5268,#ff7a59)}
+#armorFill{height:100%;width:0%;background:linear-gradient(90deg,#66e5ff,#4d8dff);transition:width .2s}
+#armorRow{margin-top:6px}
 #vehicleHint{font-size:10px;color:#d4e8f3;padding:10px 12px;min-width:145px}
-#actions{position:absolute;right:210px;bottom:23px;display:flex;gap:7px;pointer-events:auto}
+#speedo{position:absolute;right:20px;bottom:20px;text-align:right;padding:10px 16px;min-width:150px}
+#speedo.hidden{display:none}
+#speedoNum{font-size:44px;line-height:1;font-weight:950;letter-spacing:-1px;background:linear-gradient(180deg,#fff,#ffd166);-webkit-background-clip:text;background-clip:text;color:transparent}
+#speedoUnit{font-size:11px;color:var(--cyan);font-weight:800;letter-spacing:2px}
+#speedoVehicle{font-size:9px;color:#9fb7c7;letter-spacing:2px;margin-top:3px}
+#actions{position:absolute;right:20px;bottom:132px;display:flex;gap:7px;pointer-events:auto}
 .uiBtn{border:1px solid var(--line);background:rgba(8,18,30,.86);color:#dff7ff;border-radius:7px;padding:9px 12px;font-size:9px;font-weight:850;letter-spacing:1px;cursor:pointer}
 .uiBtn:hover{border-color:var(--cyan);color:var(--cyan)}
+#prompt{position:absolute;left:50%;top:62%;transform:translateX(-50%);padding:8px 14px;font-size:11px;font-weight:800;letter-spacing:2px;color:#fff;opacity:0;transition:opacity .2s}
+#prompt.show{opacity:1}
 #controls{position:absolute;left:22px;bottom:76px;font-size:9px;color:#9fb7c7;text-align:left;white-space:nowrap;text-shadow:0 2px 8px #000}
 kbd{display:inline-block;border:1px solid #557082;border-bottom-width:2px;border-radius:4px;padding:2px 5px;color:#eaf8ff;font:800 9px ui-monospace,monospace;margin:0 2px}
 #crosshair{position:absolute;left:50%;top:50%;width:16px;height:16px;transform:translate(-50%,-50%);opacity:.75}
 #crosshair:before,#crosshair:after{content:"";position:absolute;background:#d9f8ff;box-shadow:0 0 5px #4ddcff}
 #crosshair:before{left:7px;top:1px;width:2px;height:14px}#crosshair:after{left:1px;top:7px;width:14px;height:2px}
+/* Settings panel: pointer-events auto so every control stays clickable
+   (D8: no pointer lock on start, HUD buttons must stay mouse-usable). */
+#settingsPanel{position:absolute;right:20px;top:150px;width:264px;padding:16px;pointer-events:auto;z-index:5}
+#settingsPanel.hidden{display:none}
+#settingsPanel h2{margin:0 0 12px;font-size:13px;letter-spacing:2px}
+#settingsPanel label{display:block;font-size:9px;letter-spacing:1.5px;color:#9fb7c7;font-weight:800;margin:10px 0 4px}
+#settingsPanel select,#settingsPanel input[type=range]{width:100%;accent-color:var(--cyan)}
+#settingsPanel select{background:#0a1826;color:#eef8ff;border:1px solid var(--line);border-radius:6px;padding:7px}
+#settingsPanel .row{display:flex;justify-content:space-between;align-items:center}
+#settingsPanel .row b{font-size:11px;color:#fff}
+#closeSettings{margin-top:14px;width:100%}
 #startCard{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 45%,rgba(9,35,50,.25),rgba(2,7,13,.82));pointer-events:auto;transition:opacity .4s}
 #startCard.hidden{opacity:0;pointer-events:none}
 #startPanel{width:min(540px,calc(100vw - 34px));padding:28px;border-radius:17px;border:1px solid rgba(102,229,255,.35);background:linear-gradient(145deg,rgba(9,24,39,.96),rgba(7,13,23,.94));box-shadow:0 25px 100px #0009}
 #startPanel .over{font-size:10px;letter-spacing:4px;color:var(--cyan);font-weight:900}
 #startPanel h1{font-size:clamp(28px,6vw,48px);line-height:.98;margin:10px 0 12px;letter-spacing:-1.5px}
+#startPanel h1 span{background:linear-gradient(90deg,#ffd166,#ff7a59);-webkit-background-clip:text;background-clip:text;color:transparent}
 #startPanel p{font-size:12px;line-height:1.6;color:#a9c1d0;max-width:440px}
 #startPanel .disclaimer{font-size:9px;color:#7893a4;margin-top:15px}
 #startBtn{margin-top:17px;padding:13px 19px;background:var(--cyan);color:#06111a;border:0;border-radius:7px;font-weight:950;letter-spacing:1.5px;cursor:pointer}
-@media(max-width:650px){#brand{left:10px;top:10px;min-width:0;padding:9px 11px}#brand .name{font-size:16px}#stats{right:10px;top:10px;min-width:145px;padding:9px 10px}#mission{left:10px;top:100px;padding:10px;width:220px}#minimapWrap{right:10px;bottom:10px;width:102px;padding:6px}#minimap{width:88px;height:88px}#actions{right:10px;bottom:142px;flex-direction:column}.uiBtn{padding:7px 10px;font-size:8px}#bottom{left:10px;bottom:10px}#healthBox{width:125px}#vehicleHint{display:none}#controls{left:10px;bottom:56px;font-size:8px;max-width:60vw;white-space:normal}}
+@media(max-width:650px){#brand{left:10px;top:10px;min-width:0;padding:9px 11px}#brand .name{font-size:16px}#stats{right:10px;top:10px;min-width:155px;padding:9px 10px}#mission{left:10px;top:100px;padding:10px;width:220px}#minimapWrap{left:10px;top:216px;width:102px;padding:6px}#minimap{width:88px;height:88px}#actions{right:10px;bottom:118px;flex-direction:column}.uiBtn{padding:7px 10px;font-size:8px}#bottom{left:10px;bottom:10px}#healthBox{width:135px}#vehicleHint{display:none}#controls{left:10px;bottom:56px;font-size:8px;max-width:60vw;white-space:normal}#speedo{right:10px;bottom:10px;min-width:0;padding:8px 10px}#speedoNum{font-size:30px}#settingsPanel{right:10px;top:120px;width:min(264px,calc(100vw - 20px))}}
 </style>
 </head>
 <body>
 <div id="game"></div>
+<div id="vignette"></div>
 <div id="hud">
   <div id="brand" class="panel"><div class="kicker">OPEN WORLD / SUNCOAST</div><div class="name">SUNCOAST<br>HEATLINE</div><div class="sub">A CITY THAT NEVER COOLS</div></div>
   <div id="stats" class="panel">
@@ -63,25 +97,106 @@ kbd{display:inline-block;border:1px solid #557082;border-bottom-width:2px;border
     <div class="statline"><span>VEHICLE</span><b id="speed">ON FOOT</b></div>
     <div class="statline"><span>WEAPON</span><b id="weapon">PISTOL 12/∞</b></div>
     <div class="statline"><span>WANTED</span><b id="wanted">☆☆☆☆☆</b></div>
+    <div class="statline"><span>PERF</span><b id="fps">— FPS</b></div>
   </div>
-  <div id="mission" class="panel"><div class="eyebrow">CURRENT OPERATION</div><div id="missionTitle">A Favor in the Heat</div><div id="objective">Find the fixer marked on your map.</div></div>
+  <div id="mission" class="panel"><div class="eyebrow">CURRENT OPERATION <span id="missionStage">MISSION 1/6</span></div><div id="missionTitle">A Favor in the Heat</div><div id="objective">Find the fixer marked on your map.</div></div>
   <div id="toast" class="panel"></div>
   <div id="crosshair"></div>
-  <div id="bottom"><div id="healthBox" class="panel"><div class="smallLabel">VITALS <span id="healthText">100%</span></div><div class="bar"><div id="healthFill"></div></div></div><div id="vehicleHint" class="panel">Explore the city. Stay sharp.</div></div>
-  <div id="actions"><button class="uiBtn" id="saveBtn">SAVE GAME</button><button class="uiBtn" id="loadBtn">LOAD SAVE</button><button class="uiBtn" id="audioBtn">SOUND: ON</button></div>
+  <div id="prompt" class="panel">E — ENTER VEHICLE</div>
+  <div id="bottom"><div id="healthBox" class="panel"><div class="smallLabel">HEALTH <span id="healthText">100%</span></div><div class="bar"><div id="healthFill"></div></div><div id="armorRow"><div class="smallLabel">ARMOR <span id="armorText">0%</span></div><div class="bar"><div id="armorFill"></div></div></div></div><div id="vehicleHint" class="panel">Explore the city. Stay sharp.</div></div>
   <div id="minimapWrap" class="panel"><canvas id="minimap" width="160" height="160"></canvas><div id="mapLabel">SUNCOAST DISTRICT</div></div>
-  <div id="controls"><kbd>WASD</kbd> MOVE / DRIVE &nbsp; <kbd>SHIFT</kbd> SPRINT &nbsp; <kbd>E</kbd> ENTER / EXIT &nbsp; <kbd>SPACE</kbd> JUMP &nbsp; <kbd>CLICK</kbd> FIRE &nbsp; <kbd>R</kbd> RELOAD &nbsp; <kbd>1/2</kbd> WEAPON &nbsp; <kbd>H</kbd> HIDE HUD &nbsp; <kbd>M</kbd> MUTE</div>
+  <div id="speedo" class="panel hidden"><span id="speedoNum">0</span> <span id="speedoUnit">KM/H</span><div id="speedoVehicle">VENTO STRADA</div></div>
+  <div id="actions"><button class="uiBtn" id="saveBtn">SAVE GAME</button><button class="uiBtn" id="loadBtn">LOAD SAVE</button><button class="uiBtn" id="audioBtn">SOUND: ON</button><button class="uiBtn" id="settingsBtn">SETTINGS</button><button class="uiBtn" id="fsBtn">FULLSCREEN</button></div>
+  <div id="settingsPanel" class="panel hidden">
+    <h2>SETTINGS</h2>
+    <label for="qualitySel">GRAPHICS QUALITY</label>
+    <select id="qualitySel"><option value="low">Low — fastest</option><option value="medium">Medium</option><option value="high" selected>High</option><option value="ultra">Ultra</option></select>
+    <label for="timeSel">TIME OF DAY</label>
+    <select id="timeSel"><option value="golden" selected>Golden Hour</option><option value="noon">Midday</option><option value="dusk">Dusk</option><option value="night">Night</option></select>
+    <label for="rainRange">RAIN — <b id="rainVal">DRY</b></label>
+    <input id="rainRange" type="range" min="0" max="100" value="0">
+    <label for="masterVol">MASTER VOLUME — <b id="masterVal">50%</b></label>
+    <input id="masterVol" type="range" min="0" max="100" value="50">
+    <label for="musicVol">MUSIC — <b id="musicVal">60%</b></label>
+    <input id="musicVol" type="range" min="0" max="100" value="60">
+    <label for="sfxVol">SOUND EFFECTS — <b id="sfxVal">80%</b></label>
+    <input id="sfxVol" type="range" min="0" max="100" value="80">
+    <div class="row"><label style="margin:0">BACKGROUND MUSIC</label><button class="uiBtn" id="musicToggle">ON</button></div>
+    <button class="uiBtn" id="closeSettings">CLOSE — ESC</button>
+  </div>
+  <div id="controls"><kbd>WASD</kbd> MOVE / DRIVE &nbsp; <kbd>SHIFT</kbd> SPRINT &nbsp; <kbd>E</kbd> ENTER / EXIT &nbsp; <kbd>SPACE</kbd> JUMP &nbsp; <kbd>CLICK</kbd> FIRE &nbsp; <kbd>R</kbd> RELOAD &nbsp; <kbd>1/2</kbd> WEAPON &nbsp; <kbd>H</kbd> HIDE HUD &nbsp; <kbd>M</kbd> MUTE &nbsp; <kbd>F</kbd> FULLSCREEN</div>
 </div>
 <div id="startCard">
   <div id="startPanel">
     <div class="over">A NEW CITY. A NEW SCORE.</div>
-    <h1>SUNCOAST:<br><span style="color:#66e5ff">HEATLINE</span></h1>
+    <h1>SUNCOAST:<br><span>HEATLINE</span></h1>
     <p>Build your name in a living coastal city. Explore on foot, take the wheel, complete story jobs, survive the police response and make it back to your safehouse.</p>
     <button id="startBtn">ENTER THE CITY</button>
     <div class="disclaimer">Original independent game. No GTA assets, characters, logos or map data are used. All art, audio and code in this game are original.</div>
   </div>
 </div>
-<script type="importmap">{"imports":{"three":"./vendor/three.module.min.js"}}</script>
-<script type="module" src="./src/main.js"></script>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.min.js","three/addons/loaders/GLTFLoader.js":"./vendor/GLTFLoader.js"}}</script>
+<script type="module" src="./src/core/main.js"></script>
+<script type="module">
+// Settings panel wiring (rendering scope): reads/writes the persisted
+// settings, pushes changes into the live game via window.__game, and owns
+// fullscreen. No gameplay logic here.
+import { loadSettings, saveSettings } from './src/core/settings.js';
+
+const s = loadSettings();
+const $ = (id) => document.getElementById(id);
+const panel = $('settingsPanel');
+
+function syncControls() {
+  $('qualitySel').value = s.quality;
+  $('timeSel').value = s.timeOfDay;
+  $('rainRange').value = Math.round(s.rain * 100);
+  $('rainVal').textContent = s.rain <= 0 ? 'DRY' : s.rain < 0.5 ? 'LIGHT RAIN' : 'HEAVY RAIN';
+  $('masterVol').value = Math.round(s.master * 100);
+  $('masterVal').textContent = Math.round(s.master * 100) + '%';
+  $('musicVol').value = Math.round(s.music * 100);
+  $('musicVal').textContent = Math.round(s.music * 100) + '%';
+  $('sfxVol').value = Math.round(s.sfx * 100);
+  $('sfxVal').textContent = Math.round(s.sfx * 100) + '%';
+  $('musicToggle').textContent = s.musicOn ? 'ON' : 'OFF';
+}
+
+function applyToGame() {
+  const g = window.__game;
+  if (!g) return;
+  g.setQuality?.(s.quality);
+  g.setTimeOfDay?.(s.timeOfDay);
+  g.setWet?.(s.rain);
+  g.audio?.setVolumes?.({ master: s.master, music: s.music, sfx: s.sfx });
+  g.audio?.setMusicEnabled?.(s.musicOn);
+}
+
+function persist() { saveSettings(s); syncControls(); applyToGame(); }
+
+$('qualitySel').addEventListener('change', (e) => { s.quality = e.target.value; persist(); });
+$('timeSel').addEventListener('change', (e) => { s.timeOfDay = e.target.value; persist(); });
+$('rainRange').addEventListener('input', (e) => { s.rain = e.target.value / 100; persist(); });
+$('masterVol').addEventListener('input', (e) => { s.master = e.target.value / 100; persist(); });
+$('musicVol').addEventListener('input', (e) => { s.music = e.target.value / 100; persist(); });
+$('sfxVol').addEventListener('input', (e) => { s.sfx = e.target.value / 100; persist(); });
+$('musicToggle').addEventListener('click', () => { s.musicOn = !s.musicOn; persist(); });
+$('settingsBtn').addEventListener('click', () => panel.classList.toggle('hidden'));
+$('closeSettings').addEventListener('click', () => panel.classList.add('hidden'));
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) void document.exitFullscreen();
+  else void document.documentElement.requestFullscreen?.();
+}
+$('fsBtn').addEventListener('click', toggleFullscreen);
+addEventListener('keydown', (e) => {
+  if (e.code === 'KeyF' && !e.repeat) toggleFullscreen();
+  if (e.code === 'Escape') panel.classList.add('hidden');
+});
+
+syncControls();
+window.addEventListener('suncoast-ready', applyToGame);
+// If the game object already exists (late panel load), apply immediately.
+if (window.__game) applyToGame();
+</script>
 </body>
 </html>
