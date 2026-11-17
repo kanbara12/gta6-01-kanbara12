@@ -162,26 +162,73 @@ export function updateTraffic(traffic, playerCar, dt) {
  * nearest road intersection on the way to the player's last seen position —
  * so a police car routes around blocks on the road grid instead of driving
  * through buildings. Movement itself is also building-clamped with a slide.
+ *
+ * Unstick (D1 fix): a unit that pushes into a building corner can end up
+ * with both move axes blocked, speed damped to ~0 and the same steering
+ * target every frame — a permanent freeze. So each unit tracks its real
+ * displacement: if it barely moves for 0.8 s while the player is far away,
+ * it reverses out of the corner while turning for 1.4 s, then re-engages
+ * with a new heading. The cycle repeats if it wedges again, so a freeze
+ * can no longer be permanent.
  */
 export function updatePolice(police, buildings, actorPos, wanted, dt, onRam) {
   for (const c of police) {
+    const u = c.userData;
     const dx = actorPos.x - c.position.x;
     const dz = actorPos.z - c.position.z;
     const dist = Math.hypot(dx, dz);
+    if (u.stuckTimer === undefined) {
+      u.stuckTimer = 0; u.unstick = 0; u.unstickDir = 1;
+      u.lastPX = c.position.x; u.lastPZ = c.position.z;
+    }
+    const moved = Math.hypot(c.position.x - u.lastPX, c.position.z - u.lastPZ);
+    u.lastPX = c.position.x; u.lastPZ = c.position.z;
+    if (u.unstick > 0) {
+      // Reverse out of the corner while turning, then re-engage.
+      // Margin escape: a unit teleported/staged inside the 1.6 clearance
+      // ring cannot move at all under the normal margin check (every nearby
+      // step still collides), so while unsticking it only has to stay out
+      // of the building core itself (radius 0) — the clearance ring is
+      // free to cross on the way out.
+      u.unstick -= dt;
+      u.speed = -7;
+      c.rotation.y += u.unstickDir * 2.2 * dt;
+      const escapeMargin = collidesBuilding(buildings, c.position.x, c.position.z, 1.6) ? 0 : 1.6;
+      const nx = c.position.x + Math.sin(c.rotation.y) * u.speed * dt;
+      const nz = c.position.z + Math.cos(c.rotation.y) * u.speed * dt;
+      if (!collidesBuilding(buildings, nx, c.position.z, escapeMargin)) c.position.x = nx;
+      if (!collidesBuilding(buildings, c.position.x, nz, escapeMargin)) c.position.z = nz;
+      c.position.x = clamp(c.position.x, -163, 150);
+      c.position.z = clamp(c.position.z, -163, 163);
+      if (u.unstick <= 0) { u.stuckTimer = 0; u.speed = 0; }
+      animateCar(c, dt, u.unstickDir);
+      continue;
+    }
+    if (moved < 0.05 && dist > 8) {
+      u.stuckTimer += dt;
+      if (u.stuckTimer > 0.8) {
+        u.unstick = 1.4;
+        u.unstickDir = (((c.position.x * 7 + c.position.z * 13) % 2) + 2) % 2 < 1 ? 1 : -1;
+      }
+    } else {
+      u.stuckTimer = Math.max(0, u.stuckTimer - dt * 2);
+    }
     let tx = actorPos.x;
     let tz = actorPos.z;
     const seesPlayer = hasLineOfSight(buildings, c.position.x, c.position.z, actorPos.x, actorPos.z);
     if (!seesPlayer) {
       // Route via the road grid: head for the intersection nearest the player
-      // that is also nearest to this car, one leg at a time.
+      // that is also nearest to this car, one leg at a time — axis-aligned,
+      // staying on the road the car is already nearest to first, so the car
+      // never cuts diagonally across a block corner.
       tx = nearestRoadCoord(actorPos.x);
       tz = nearestRoadCoord(actorPos.z);
       const carRoadX = nearestRoadCoord(c.position.x);
       const carRoadZ = nearestRoadCoord(c.position.z);
-      if (Math.abs(tx - carRoadX) > Math.abs(tz - carRoadZ)) {
-        tz = carRoadZ;
+      if (Math.abs(c.position.x - carRoadX) <= Math.abs(c.position.z - carRoadZ)) {
+        tx = carRoadX; // first leg: along the car's vertical road
       } else {
-        tx = carRoadX;
+        tz = carRoadZ; // first leg: along the car's horizontal road
       }
     }
     const tdx = tx - c.position.x;
@@ -193,9 +240,13 @@ export function updatePolice(police, buildings, actorPos, wanted, dt, onRam) {
     const nx = c.position.x + Math.sin(c.rotation.y) * c.userData.speed * dt;
     const nz = c.position.z + Math.cos(c.rotation.y) * c.userData.speed * dt;
     // Building avoidance: slide along the blocked axis, never pass through.
-    if (!collidesBuilding(buildings, nx, c.position.z, 1.6)) c.position.x = nx;
+    // Margin escape (same rule as the unstick branch): a unit already
+    // inside the clearance ring may cross the ring to get out, it just
+    // must not enter the building core itself.
+    const margin = collidesBuilding(buildings, c.position.x, c.position.z, 1.6) ? 0 : 1.6;
+    if (!collidesBuilding(buildings, nx, c.position.z, margin)) c.position.x = nx;
     else c.userData.speed *= 0.6;
-    if (!collidesBuilding(buildings, c.position.x, nz, 1.6)) c.position.z = nz;
+    if (!collidesBuilding(buildings, c.position.x, nz, margin)) c.position.z = nz;
     else c.userData.speed *= 0.6;
     c.position.x = clamp(c.position.x, -163, 150);
     c.position.z = clamp(c.position.z, -163, 163);
@@ -204,15 +255,27 @@ export function updatePolice(police, buildings, actorPos, wanted, dt, onRam) {
   }
 }
 
-/** Spawn one police car at a random bearing, 48 units from the actor. */
-export function spawnPoliceCar(scene, actorPos, rng) {
+/**
+ * Spawn one police car at a random bearing, 48 units from the actor.
+ * The spawn point is validated clear of buildings (margin 2.2, above the
+ * 1.6 collision radius); after 8 blocked tries it falls back to the
+ * nearest road intersection, which is always clear of buildings.
+ */
+export function spawnPoliceCar(scene, actorPos, rng, buildings = null) {
   const c = makeCar(0x172d49, true);
-  const angle = rng() * Math.PI * 2;
-  c.position.set(
-    clamp(actorPos.x + Math.cos(angle) * 48, -150, 150),
-    0,
-    clamp(actorPos.z + Math.sin(angle) * 48, -150, 150),
-  );
+  let x = 0;
+  let z = 0;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const angle = rng() * Math.PI * 2;
+    x = clamp(actorPos.x + Math.cos(angle) * 48, -150, 150);
+    z = clamp(actorPos.z + Math.sin(angle) * 48, -150, 150);
+    if (!buildings || !collidesBuilding(buildings, x, z, 2.2)) break;
+    if (attempt === 7) {
+      x = nearestRoadCoord(x);
+      z = nearestRoadCoord(z);
+    }
+  }
+  c.position.set(x, 0, z);
   c.userData.speed = 0;
   scene.add(c);
   return c;

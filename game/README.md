@@ -111,8 +111,9 @@ system owns one file and one job.
   mission — traffic, police and pedestrian positions are re-seeded, not saved.
 - Pedestrians walk fixed sidewalk loops; they react to gunfire but have no
   full pathfinding.
-- Police route around blocks via the road grid; in rare corner cases a unit
-  can hesitate at a building corner before finding the road again.
+- Police route around blocks via the road grid; a unit that gets wedged in
+  a building corner reverses out and re-routes (unstick), and police and
+  pedestrian spawn points are validated clear of buildings.
 - No day/night cycle or weather; the game is set at golden hour.
 - The ocean is a vertex-animated plane, not a shader water simulation.
 

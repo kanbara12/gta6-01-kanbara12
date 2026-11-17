@@ -68,11 +68,13 @@ export function stageShot(name, G) {
     G.wanted = 3;
     G.heat = 60;
     while (G.police.length < 3) {
-      G.police.push(spawnPoliceCar(G.scene, G.actorPosition(), rng));
+      G.police.push(spawnPoliceCar(G.scene, G.actorPosition(), rng, G.buildings));
     }
-    G.police[0].position.set(10, 0, -52);
-    G.police[1].position.set(-12, 0, -58);
-    G.police[2].position.set(2, 0, -78);
+    // All three staged on open road, clear of buildings: unit 2 used to sit
+    // at (-12,-58), wedged against a building corner (QA defect D1).
+    G.police[0].position.set(0, 0, -54);
+    G.police[1].position.set(-36, 0, -54);
+    G.police[2].position.set(0, 0, -84);
     for (const c of G.police) c.userData.speed = 10 + rng() * 3;
     G.missionIndex = 4;
     placeMarker(G.marker, G.missionIndex);

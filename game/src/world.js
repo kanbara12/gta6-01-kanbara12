@@ -48,10 +48,24 @@ function makeSky(scene) {
     vertexColors: true, side: THREE.BackSide, fog: false,
   }));
   scene.add(sky);
-  // Low sun disc with a soft glow sprite (canvas-generated, data-free: plain mesh).
+  // Low sun disc with a soft radial glow (canvas-generated, data-free),
+  // so the edge fades out instead of cutting a hard white disc against
+  // the waterfront towers (QA defect D7).
+  const glowCanvas = document.createElement('canvas');
+  glowCanvas.width = 256;
+  glowCanvas.height = 256;
+  const gctx = glowCanvas.getContext('2d');
+  const grad = gctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  grad.addColorStop(0, 'rgba(255,242,200,1)');
+  grad.addColorStop(0.45, 'rgba(255,236,180,0.85)');
+  grad.addColorStop(1, 'rgba(255,236,180,0)');
+  gctx.fillStyle = grad;
+  gctx.fillRect(0, 0, 256, 256);
   const sunDisc = new THREE.Mesh(
-    new THREE.CircleGeometry(14, 32),
-    new THREE.MeshBasicMaterial({ color: 0xfff2c8, fog: false }),
+    new THREE.CircleGeometry(16, 32),
+    new THREE.MeshBasicMaterial({
+      map: new THREE.CanvasTexture(glowCanvas), transparent: true, fog: false, depthWrite: false,
+    }),
   );
   sunDisc.position.set(-260, 150, -180);
   sunDisc.lookAt(0, 40, 0);

@@ -54,5 +54,5 @@ export function parseQuery() {
   const shot = (q.get('shot') || '').toLowerCase();
   const seed = Number.parseInt(q.get('seed') || '1', 10) || 1;
   const hud = q.get('hud');
-  return { shot, seed, hideHud: hud === '0' || shot !== '' };
+  return { shot, seed, hud, hideHud: hud === '0' || shot !== '' };
 }

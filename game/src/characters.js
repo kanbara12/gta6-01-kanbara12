@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import { WORLD, mulberry32 } from './config.js';
-import { collidesBuilding } from './world.js';
+import { collidesBuilding, nearestRoadCoord } from './world.js';
 
 function mat(color, roughness = 0.82, metalness = 0) {
   return new THREE.MeshStandardMaterial({ color, roughness, metalness });
@@ -78,19 +78,36 @@ export function spawnPedestrians(scene, buildings, seed = 7) {
   for (let i = 0; i < 14; i += 1) {
     const p = createCharacter(PED_COLOURS[i % PED_COLOURS.length]);
     // Sidewalk position: near a road, offset from its centre line.
-    const roadX = (Math.floor(rng() * 9) - 4) * WORLD.grid;
-    const roadZ = (Math.floor(rng() * 9) - 4) * WORLD.grid;
-    const onVertical = rng() < 0.5;
-    const x = onVertical ? roadX + 8.5 : (rng() * 2 - 1) * 140;
-    const z = onVertical ? (rng() * 2 - 1) * 140 : roadZ + 8.5;
+    // Validated clear of buildings (margin 2.5, well above the 0.6 walk
+    // radius) so no pedestrian spawns wedged against a wall (QA defect D2);
+    // after 10 blocked tries fall back to the nearest road intersection,
+    // which is always clear of buildings.
+    let x = 0;
+    let z = 0;
+    let onVertical = true;
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const roadX = (Math.floor(rng() * 9) - 4) * WORLD.grid;
+      const roadZ = (Math.floor(rng() * 9) - 4) * WORLD.grid;
+      onVertical = rng() < 0.5;
+      x = onVertical ? roadX + 8.5 : (rng() * 2 - 1) * 140;
+      z = onVertical ? (rng() * 2 - 1) * 140 : roadZ + 8.5;
+      if (!collidesBuilding(buildings, x, z, 2.5)) break;
+      if (attempt === 9) {
+        x = nearestRoadCoord(x);
+        z = nearestRoadCoord(z);
+      }
+    }
     p.position.set(x, 0, z);
     p.userData.isPed = true;
     p.userData.speed = 1.2 + rng() * 0.9;
     p.userData.axis = onVertical ? 'z' : 'x';
     p.userData.dir = rng() < 0.5 ? 1 : -1;
     p.userData.flee = 0; // seconds of fleeing left
-    p.userData.fleeX = 0;
-    p.userData.fleeZ = 0;
+    p.userData.fleeDX = 0; // fixed flee direction (set at gunfire time)
+    p.userData.fleeDZ = 0;
+    p.userData.pedStuck = 0; // seconds barely moving while fleeing
+    p.userData.lastPX = x;
+    p.userData.lastPZ = z;
     scene.add(p);
     peds.push(p);
   }
@@ -106,17 +123,37 @@ export function updatePedestrians(peds, buildings, dt, gunfire) {
     const u = p.userData;
     if (gunfire) {
       u.flee = 3;
-      u.fleeX = gunfire.x; u.fleeZ = gunfire.z;
+      // Fix the flee direction at gunfire time: recomputing it every frame
+      // from the current position makes a pedestrian sliding along a wall
+      // oscillate in place instead of running clear.
+      const dx = p.position.x - gunfire.x;
+      const dz = p.position.z - gunfire.z;
+      const len = Math.hypot(dx, dz) || 1;
+      u.fleeDX = dx / len;
+      u.fleeDZ = dz / len;
     }
     let mx = 0;
     let mz = 0;
     let speed = u.speed;
     if (u.flee > 0) {
       u.flee -= dt;
-      const dx = p.position.x - u.fleeX;
-      const dz = p.position.z - u.fleeZ;
-      const len = Math.hypot(dx, dz) || 1;
-      mx = dx / len; mz = dz / len;
+      // Wedged while fleeing (D2 fix): if the pedestrian barely moves,
+      // turn the flee direction 90 degrees so it runs along the wall
+      // instead of pushing into it forever.
+      const moved = Math.hypot(p.position.x - u.lastPX, p.position.z - u.lastPZ);
+      if (moved < 0.02) {
+        u.pedStuck += dt;
+        if (u.pedStuck > 0.5) {
+          const ndx = -u.fleeDZ;
+          const ndz = u.fleeDX;
+          u.fleeDX = ndx;
+          u.fleeDZ = ndz;
+          u.pedStuck = 0;
+        }
+      } else {
+        u.pedStuck = 0;
+      }
+      mx = u.fleeDX; mz = u.fleeDZ;
       speed = 5.2;
     } else if (u.axis === 'z') {
       mz = u.dir;
@@ -125,8 +162,13 @@ export function updatePedestrians(peds, buildings, dt, gunfire) {
     }
     const nx = THREE.MathUtils.clamp(p.position.x + mx * speed * dt, -WORLD.half, WORLD.half);
     const nz = THREE.MathUtils.clamp(p.position.z + mz * speed * dt, -WORLD.half, WORLD.half);
-    if (!collidesBuilding(buildings, nx, p.position.z, 0.6)) p.position.x = nx;
-    if (!collidesBuilding(buildings, p.position.x, nz, 0.6)) p.position.z = nz;
+    // Margin escape (same rule as police): a pedestrian already inside the
+    // clearance ring may cross the ring to get out, just not into the core.
+    const pedMargin = collidesBuilding(buildings, p.position.x, p.position.z, 0.6) ? 0 : 0.6;
+    if (!collidesBuilding(buildings, nx, p.position.z, pedMargin)) p.position.x = nx;
+    if (!collidesBuilding(buildings, p.position.x, nz, pedMargin)) p.position.z = nz;
+    u.lastPX = p.position.x;
+    u.lastPZ = p.position.z;
     // Turn around at the map edge or when blocked.
     if ((u.axis === 'z' && Math.abs(p.position.z) > 158) || (u.axis === 'x' && Math.abs(p.position.x) > 158)) {
       u.dir *= -1;

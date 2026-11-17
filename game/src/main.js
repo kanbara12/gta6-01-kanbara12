@@ -39,7 +39,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'hi
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.7));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.08;
@@ -374,7 +374,7 @@ function updatePoliceSpawns(dt) {
   if (G.wanted > 0) {
     G.policeSpawn -= dt;
     if (G.police.length < Math.min(1 + G.wanted, 4) && G.policeSpawn <= 0) {
-      G.police.push(spawnPoliceCar(scene, p, Math.random));
+      G.police.push(spawnPoliceCar(scene, p, Math.random, buildings));
       G.policeSpawn = 4.5;
     }
   } else {
@@ -488,6 +488,9 @@ function animate(now) {
     updateHud(G);
     drawMinimap(G);
   } else if (!G.gameStarted) {
+    // Start screen: keep the minimap live behind the card instead of a
+    // blank dark canvas.
+    drawMinimap(G);
     camera.position.set(0, 13, 23);
     camera.lookAt(0, 0, 0);
   }
