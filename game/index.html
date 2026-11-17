@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<link rel="icon" href="data:,">
+<title>SUNCOAST: HEATLINE — Open World</title>
+<style>
+:root{--cyan:#66e5ff;--gold:#ffd166;--panel:rgba(8,15,25,.78);--line:rgba(112,220,255,.28)}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#07111c;color:#eef8ff;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Arial,sans-serif}
+#game{position:fixed;inset:0}canvas{display:block}
+#hud{position:fixed;inset:0;pointer-events:none}
+#hud.hidden{display:none}
+.panel{background:linear-gradient(135deg,rgba(8,18,30,.88),rgba(8,18,30,.58));border:1px solid var(--line);box-shadow:0 10px 36px rgba(0,0,0,.22);backdrop-filter:blur(9px);border-radius:12px}
+#brand{position:absolute;left:22px;top:18px;padding:12px 16px;min-width:205px}
+#brand .kicker{font-size:9px;letter-spacing:3px;color:var(--cyan);font-weight:800}
+#brand .name{font-size:21px;line-height:1.1;font-weight:950;letter-spacing:1.3px}
+#brand .sub{font-size:9px;color:#9fb7c7;letter-spacing:2px;margin-top:5px}
+#stats{position:absolute;right:20px;top:18px;padding:12px 15px;min-width:200px;text-align:right}
+.statline{display:flex;justify-content:space-between;gap:22px;font-size:11px;margin:4px 0;color:#a9c2d3}
+.statline b{color:#fff;font-size:13px;letter-spacing:.5px}
+#wanted{color:var(--gold);letter-spacing:2px}
+#mission{position:absolute;left:22px;top:118px;width:min(340px,calc(100vw - 44px));padding:13px 15px}
+.eyebrow{font-size:9px;letter-spacing:2px;color:var(--cyan);font-weight:800;text-transform:uppercase}
+#missionTitle{font-weight:850;font-size:15px;margin:5px 0}
+#objective{font-size:11px;line-height:1.45;color:#b8cbd7}
+#toast{position:absolute;left:50%;top:22px;transform:translateX(-50%);padding:10px 16px;max-width:min(500px,90vw);font-size:12px;text-align:center;opacity:0;transition:opacity .25s}
+#toast.show{opacity:1}
+#minimapWrap{position:absolute;right:20px;bottom:20px;width:176px;padding:8px}
+#minimap{display:block;width:160px;height:160px;border-radius:7px;background:#101e2a}
+#mapLabel{font-size:8px;letter-spacing:2px;color:#9fb7c7;text-align:center;margin-top:5px}
+#bottom{position:absolute;left:22px;bottom:20px;display:flex;gap:8px;align-items:flex-end}
+#healthBox{width:165px;padding:10px 12px}
+.smallLabel{font-size:8px;letter-spacing:1.8px;color:#9fb7c7;font-weight:800}
+.bar{height:6px;background:#243544;border-radius:8px;overflow:hidden;margin-top:7px}
+#healthFill{height:100%;width:100%;background:linear-gradient(90deg,#5de0ad,#a7f36c);transition:width .2s}
+#vehicleHint{font-size:10px;color:#d4e8f3;padding:10px 12px;min-width:145px}
+#actions{position:absolute;right:210px;bottom:23px;display:flex;gap:7px;pointer-events:auto}
+.uiBtn{border:1px solid var(--line);background:rgba(8,18,30,.86);color:#dff7ff;border-radius:7px;padding:9px 12px;font-size:9px;font-weight:850;letter-spacing:1px;cursor:pointer}
+.uiBtn:hover{border-color:var(--cyan);color:var(--cyan)}
+#controls{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);font-size:9px;color:#9fb7c7;text-align:center;white-space:nowrap;text-shadow:0 2px 8px #000}
+kbd{display:inline-block;border:1px solid #557082;border-bottom-width:2px;border-radius:4px;padding:2px 5px;color:#eaf8ff;font:800 9px ui-monospace,monospace;margin:0 2px}
+#crosshair{position:absolute;left:50%;top:50%;width:16px;height:16px;transform:translate(-50%,-50%);opacity:.75}
+#crosshair:before,#crosshair:after{content:"";position:absolute;background:#d9f8ff;box-shadow:0 0 5px #4ddcff}
+#crosshair:before{left:7px;top:1px;width:2px;height:14px}#crosshair:after{left:1px;top:7px;width:14px;height:2px}
+#startCard{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 45%,rgba(9,35,50,.25),rgba(2,7,13,.82));pointer-events:auto;transition:opacity .4s}
+#startCard.hidden{opacity:0;pointer-events:none}
+#startPanel{width:min(540px,calc(100vw - 34px));padding:28px;border-radius:17px;border:1px solid rgba(102,229,255,.35);background:linear-gradient(145deg,rgba(9,24,39,.96),rgba(7,13,23,.94));box-shadow:0 25px 100px #0009}
+#startPanel .over{font-size:10px;letter-spacing:4px;color:var(--cyan);font-weight:900}
+#startPanel h1{font-size:clamp(28px,6vw,48px);line-height:.98;margin:10px 0 12px;letter-spacing:-1.5px}
+#startPanel p{font-size:12px;line-height:1.6;color:#a9c1d0;max-width:440px}
+#startPanel .disclaimer{font-size:9px;color:#7893a4;margin-top:15px}
+#startBtn{margin-top:17px;padding:13px 19px;background:var(--cyan);color:#06111a;border:0;border-radius:7px;font-weight:950;letter-spacing:1.5px;cursor:pointer}
+@media(max-width:650px){#brand{left:10px;top:10px;min-width:0;padding:9px 11px}#brand .name{font-size:16px}#stats{right:10px;top:10px;min-width:145px;padding:9px 10px}#mission{left:10px;top:92px;padding:10px;width:220px}#minimapWrap{right:10px;bottom:10px;width:132px;padding:6px}#minimap{width:118px;height:118px}#actions{right:10px;bottom:145px;flex-direction:column}#bottom{left:10px;bottom:10px}#healthBox{width:125px}#vehicleHint{display:none}#controls{bottom:12px;font-size:8px;max-width:58vw;white-space:normal}}
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="hud">
+  <div id="brand" class="panel"><div class="kicker">OPEN WORLD / SUNCOAST</div><div class="name">SUNCOAST<br>HEATLINE</div><div class="sub">A CITY THAT NEVER COOLS</div></div>
+  <div id="stats" class="panel">
+    <div class="statline"><span>CASH</span><b id="cash">$ 1,250</b></div>
+    <div class="statline"><span>VEHICLE</span><b id="speed">ON FOOT</b></div>
+    <div class="statline"><span>WEAPON</span><b id="weapon">PISTOL 12/∞</b></div>
+    <div class="statline"><span>WANTED</span><b id="wanted">☆☆☆☆☆</b></div>
+  </div>
+  <div id="mission" class="panel"><div class="eyebrow">CURRENT OPERATION</div><div id="missionTitle">A Favor in the Heat</div><div id="objective">Find the fixer marked on your map.</div></div>
+  <div id="toast" class="panel"></div>
+  <div id="crosshair"></div>
+  <div id="bottom"><div id="healthBox" class="panel"><div class="smallLabel">VITALS <span id="healthText">100%</span></div><div class="bar"><div id="healthFill"></div></div></div><div id="vehicleHint" class="panel">Explore the city. Stay sharp.</div></div>
+  <div id="actions"><button class="uiBtn" id="saveBtn">SAVE GAME</button><button class="uiBtn" id="loadBtn">LOAD SAVE</button><button class="uiBtn" id="audioBtn">SOUND: ON</button></div>
+  <div id="minimapWrap" class="panel"><canvas id="minimap" width="160" height="160"></canvas><div id="mapLabel">SUNCOAST DISTRICT</div></div>
+  <div id="controls"><kbd>WASD</kbd> MOVE / DRIVE &nbsp; <kbd>SHIFT</kbd> SPRINT &nbsp; <kbd>E</kbd> ENTER / EXIT &nbsp; <kbd>SPACE</kbd> JUMP &nbsp; <kbd>CLICK</kbd> FIRE &nbsp; <kbd>R</kbd> RELOAD &nbsp; <kbd>1/2</kbd> WEAPON &nbsp; <kbd>H</kbd> HIDE HUD &nbsp; <kbd>M</kbd> MUTE</div>
+</div>
+<div id="startCard">
+  <div id="startPanel">
+    <div class="over">A NEW CITY. A NEW SCORE.</div>
+    <h1>SUNCOAST:<br><span style="color:#66e5ff">HEATLINE</span></h1>
+    <p>Build your name in a living coastal city. Explore on foot, take the wheel, complete story jobs, survive the police response and make it back to your safehouse.</p>
+    <button id="startBtn">ENTER THE CITY</button>
+    <div class="disclaimer">Original independent game. No GTA assets, characters, logos or map data are used. All art, audio and code in this game are original.</div>
+  </div>
+</div>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.min.js"}}</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
