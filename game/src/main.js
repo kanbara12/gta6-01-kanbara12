@@ -172,7 +172,11 @@ $('startBtn').addEventListener('click', () => {
   $('startCard').classList.add('hidden');
   G.gameStarted = true;
   showToast('WELCOME TO SUNCOAST • FIND THE FIXER');
-  G.input.lockPointer();
+  // NOTE (D8 fix): do NOT auto-lock the pointer here. While pointer lock is
+  // active the browser retargets every mouse event to the canvas, so the HUD
+  // buttons (SAVE GAME / LOAD SAVE / SOUND) become unclickable and each click
+  // fires the weapon instead. Pointer lock happens only when the player
+  // clicks the canvas (see input.js), so the HUD stays usable after start.
 });
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
