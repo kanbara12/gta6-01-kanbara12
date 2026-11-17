@@ -163,13 +163,12 @@ export function updateTraffic(traffic, playerCar, dt) {
  * so a police car routes around blocks on the road grid instead of driving
  * through buildings. Movement itself is also building-clamped with a slide.
  *
- * Unstick (D1 fix): a unit that pushes into a building corner can end up
- * with both move axes blocked, speed damped to ~0 and the same steering
- * target every frame — a permanent freeze. So each unit tracks its real
- * displacement: if it barely moves for 0.8 s while the player is far away,
- * it reverses out of the corner while turning for 1.4 s, then re-engages
- * with a new heading. The cycle repeats if it wedges again, so a freeze
- * can no longer be permanent.
+ * Anti-freeze (QA defect D1): a unit wedged into a building corner ends up
+ * with both move axes blocked and its speed damped to ~0 while steering at
+ * the same target every frame — a permanent freeze. Each unit therefore
+ * tracks its real displacement: barely moving for 0.8 s while the player is
+ * far away triggers a 1.4 s reverse-out with a turn, then it re-engages.
+ * The cycle repeats if it wedges again, so a freeze can never be permanent.
  */
 export function updatePolice(police, buildings, actorPos, wanted, dt, onRam) {
   for (const c of police) {
@@ -184,12 +183,12 @@ export function updatePolice(police, buildings, actorPos, wanted, dt, onRam) {
     const moved = Math.hypot(c.position.x - u.lastPX, c.position.z - u.lastPZ);
     u.lastPX = c.position.x; u.lastPZ = c.position.z;
     if (u.unstick > 0) {
-      // Reverse out of the corner while turning, then re-engage.
-      // Margin escape: a unit teleported/staged inside the 1.6 clearance
-      // ring cannot move at all under the normal margin check (every nearby
-      // step still collides), so while unsticking it only has to stay out
-      // of the building core itself (radius 0) — the clearance ring is
-      // free to cross on the way out.
+      // Back out of the corner while turning, then re-engage.
+      // Ring escape: a unit sitting inside the 1.6 clearance ring cannot
+      // move at all under the normal margin check (every nearby step still
+      // collides), so while unsticking it only has to stay out of the
+      // building core itself (radius 0) — the clearance ring is free to
+      // cross on the way out.
       u.unstick -= dt;
       u.speed = -7;
       c.rotation.y += u.unstickDir * 2.2 * dt;
@@ -240,9 +239,9 @@ export function updatePolice(police, buildings, actorPos, wanted, dt, onRam) {
     const nx = c.position.x + Math.sin(c.rotation.y) * c.userData.speed * dt;
     const nz = c.position.z + Math.cos(c.rotation.y) * c.userData.speed * dt;
     // Building avoidance: slide along the blocked axis, never pass through.
-    // Margin escape (same rule as the unstick branch): a unit already
-    // inside the clearance ring may cross the ring to get out, it just
-    // must not enter the building core itself.
+    // Ring escape (same rule as the unstick branch): a unit already inside
+    // the clearance ring may cross the ring to get out, it just must not
+    // enter the building core itself.
     const margin = collidesBuilding(buildings, c.position.x, c.position.z, 1.6) ? 0 : 1.6;
     if (!collidesBuilding(buildings, nx, c.position.z, margin)) c.position.x = nx;
     else c.userData.speed *= 0.6;
