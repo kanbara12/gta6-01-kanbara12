@@ -141,9 +141,19 @@ kbd{display:inline-block;border:1px solid #557082;border-bottom-width:2px;border
 // Settings panel wiring (rendering scope): reads/writes the persisted
 // settings, pushes changes into the live game via window.__game, and owns
 // fullscreen. No gameplay logic here.
-import { loadSettings, saveSettings } from './src/core/settings.js';
+import { loadSettings, saveSettings, QUALITY_NAMES, TIME_NAMES } from './src/core/settings.js';
 
 const s = loadSettings();
+// URL overrides (?quality= ?time= ?rain=) win for this session, exactly like
+// main.js parses them — and are applied in memory only, never written to
+// localStorage by the initial apply below. Before this fix the panel read
+// only the persisted settings (default high) and re-applied them on
+// 'suncoast-ready', clobbering the query override main.js had applied (D-QA3).
+const q = new URLSearchParams(location.search);
+if (QUALITY_NAMES.includes(q.get('quality'))) s.quality = q.get('quality');
+if (TIME_NAMES.includes(q.get('time'))) s.timeOfDay = q.get('time');
+const qRain = Number(q.get('rain'));
+if (q.get('rain') !== null && Number.isFinite(qRain)) s.rain = Math.max(0, Math.min(1, qRain));
 const $ = (id) => document.getElementById(id);
 const panel = $('settingsPanel');
 
@@ -173,6 +183,21 @@ function applyToGame() {
 
 function persist() { saveSettings(s); syncControls(); applyToGame(); }
 
+/** First apply after the game is ready: straight into the renderer, no save
+ * — a ?quality=/?time=/?rain= override is session-only (main.js never
+ * writes it to localStorage), and the persisted settings must not be
+ * rewritten just because the page loaded. User changes go through persist()
+ * + applyToGame() above, which do save. */
+function applyInitial() {
+  const g = window.__game;
+  if (!g) return;
+  g.renderEnv?.setQuality?.(s.quality);
+  g.renderEnv?.setTimeOfDay?.(s.timeOfDay);
+  g.renderEnv?.setWet?.(s.rain);
+  g.audio?.setVolumes?.({ master: s.master, music: s.music, sfx: s.sfx });
+  g.audio?.setMusicEnabled?.(s.musicOn);
+}
+
 $('qualitySel').addEventListener('change', (e) => { s.quality = e.target.value; persist(); });
 $('timeSel').addEventListener('change', (e) => { s.timeOfDay = e.target.value; persist(); });
 $('rainRange').addEventListener('input', (e) => { s.rain = e.target.value / 100; persist(); });
@@ -194,9 +219,9 @@ addEventListener('keydown', (e) => {
 });
 
 syncControls();
-window.addEventListener('suncoast-ready', applyToGame);
+window.addEventListener('suncoast-ready', applyInitial);
 // If the game object already exists (late panel load), apply immediately.
-if (window.__game) applyToGame();
+if (window.__game) applyInitial();
 </script>
 </body>
 </html>

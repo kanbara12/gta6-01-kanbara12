@@ -130,21 +130,35 @@ export function createMissionMarker(scene) {
   ring.rotation.x = Math.PI / 2;
   ring.position.y = 0.25;
   marker.add(ring);
+  // D-QA7: the old beam was a wide cone (r 0.12 -> 0.8) that read as a
+  // white wedge cutting the frame. Slim uniform shaft, fainter, no depth
+  // write so it never hides the street behind it.
   const beam = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.12, 0.8, 6, 12, 1, true),
+    new THREE.CylinderGeometry(0.22, 0.22, 6, 12, 1, true),
     new THREE.MeshBasicMaterial({
-      color: 0x55dfff, transparent: true, opacity: 0.18, side: THREE.DoubleSide,
+      color: 0x55dfff, transparent: true, opacity: 0.10,
+      side: THREE.DoubleSide, depthWrite: false,
     }),
   );
   beam.position.y = 3;
   marker.add(beam);
+  // D-QA7: the old core read as a plain yellow box. Elongated octahedron
+  // (a diamond, not a cube) + a thin tilted halo ring spinning around it.
   const core = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.65),
+    new THREE.OctahedronGeometry(0.62),
     new THREE.MeshBasicMaterial({ color: 0xffd166 }),
   );
+  core.scale.set(1, 1.45, 1);
   core.position.y = 1.1;
   marker.add(core);
-  marker.userData = { ring, beam, core };
+  const coreRing = new THREE.Mesh(
+    new THREE.TorusGeometry(1.0, 0.045, 8, 40),
+    new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.85 }),
+  );
+  coreRing.position.y = 1.1;
+  coreRing.rotation.x = Math.PI / 3;
+  marker.add(coreRing);
+  marker.userData = { ring, beam, core, coreRing };
   return marker;
 }
 
@@ -154,6 +168,11 @@ export function animateMarker(marker, dt) {
   core.rotation.y += dt * 1.5;
   core.rotation.x += dt * 0.5;
   core.position.y = 1.1 + Math.sin(performance.now() * 0.002) * 0.25;
+  const coreRing = marker.userData.coreRing;
+  if (coreRing) {
+    coreRing.rotation.z += dt * 1.2;
+    coreRing.position.y = core.position.y;
+  }
 }
 
 function nearPoint(pos, p, r = 4) {
@@ -233,6 +252,10 @@ export function updateMissions(G, dt) {
   if (G._lastStage !== i) {
     G._lastStage = i;
     if (i >= 0 && i < MISSION_POINTS.length) onStageStart(G, i);
+    // D-QA1: the 3D marker must follow the stage. It used to move only on
+    // init / load / stageShot, so from stage 1 on it pointed at the wrong
+    // place while the HUD + minimap were already correct.
+    if (G.marker) placeMarker(G.marker, i);
   }
   if (i === 3) reinforceYard(G);
   if (i === 0 && nearPoint(p, MISSION_POINTS[0], 5)) {

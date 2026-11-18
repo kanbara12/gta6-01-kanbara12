@@ -92,6 +92,33 @@ function inBlock(offset, half) {
   return THREE.MathUtils.clamp(offset, -Math.max(max, 0), Math.max(max, 0));
 }
 
+/**
+ * D-QA9 (Nov 2026): pull a tree spot off the asphalt. Roads occupy 6.5
+ * units either side of every 36-unit centreline, so a spot must sit at
+ * least 9 units from the nearest centreline (sidewalk outer edge) to be
+ * on the plot. A spot closer than that is nudged to the 9-unit line on
+ * the side away from the road — same corner, just off the driving lane.
+ * Pure + deterministic; returns [x, z]. NOTE: only for spots with no
+ * building nearby (park trees). Yard trees use the corner rule in
+ * buildHouse instead — nudging one toward the plot edge can push it
+ * into its own house.
+ */
+function offRoad(x, z) {
+  const push = (v) => {
+    const c = Math.round(v / WORLD.grid) * WORLD.grid;
+    const d = v - c;
+    if (Math.abs(d) < 9) return c + 9 * Math.sign(d || 1);
+    return v;
+  };
+  return [push(x), push(z)];
+}
+
+/** True when the spot sits on a road (within the 6.5-unit road half-width). */
+function onRoad(x, z) {
+  const near = (v) => Math.abs(v - Math.round(v / WORLD.grid) * WORLD.grid) < 6.5;
+  return near(x) || near(z);
+}
+
 // ------------------------------------------------------------------ sky
 function paintSky(topHex, midHex, horizonHex) {
   const top = new THREE.Color(topHex);
@@ -411,8 +438,18 @@ function buildHouse(ctx, cx, cz, ox, oz, seed) {
   addBox(g, w * 0.5, 0.25, 1.6, mat(0xa8907c), 0, 0.12, d / 2 + 0.8, false);
   addWindows(ctx, x, z, w, d, h, 2, 2);
   pushBuilding(ctx, x, z, w, d, h + 2.5, 'residential', 'house');
-  // Yard tree.
-  ctx.treeSpots.push([x + (seeded(seed + 31) - 0.5) * 14, z + (seeded(seed + 33) - 0.5) * 14]);
+  // Yard tree. D-QA9: the seeded offset can land the trunk on the road
+  // (up to 0.5 units onto the asphalt). If so, move it to the block
+  // corner on the same side — still in the yard, off the asphalt and
+  // clear of both houses (a plain nudge toward the plot edge could push
+  // it into the house wall).
+  let tx = x + (seeded(seed + 31) - 0.5) * 14;
+  let tz = z + (seeded(seed + 33) - 0.5) * 14;
+  if (onRoad(tx, tz)) {
+    tx = tx < cx ? cx - 9 : cx + 9;
+    tz = tz < cz ? cz - 9 : cz + 9;
+  }
+  ctx.treeSpots.push([tx, tz]);
 }
 
 /** Warehouse: brick box, big loading door, roof slab, container stacks. */
@@ -593,12 +630,13 @@ function buildPark(ctx, cx, cz, seed, central) {
     path.receiveShadow = true;
     ctx.world.add(path);
   }
-  // Trees + benches.
+  // Trees + benches. D-QA9: park spots are seeded too — offRoad() keeps
+  // any that would land on the surrounding roads on the lawn instead.
   for (let t = 0; t < 8; t += 1) {
-    ctx.treeSpots.push([
+    ctx.treeSpots.push(offRoad(
       cx + (seeded(seed + t * 3) - 0.5) * 24,
       cz + (seeded(seed + t * 5 + 1) - 0.5) * 24,
-    ]);
+    ));
   }
   for (let b = 0; b < 3; b += 1) {
     const bx = cx - 8 + b * 8;
@@ -902,9 +940,19 @@ function makeVegetation(world, ctx) {
   const trunkGeo = new THREE.CylinderGeometry(0.22, 0.38, 5.4, 6);
   const trunkMat = mat(0x7a5230, 0.95);
   const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, ctx.palmSpots.length);
-  const crownGeo = new THREE.IcosahedronGeometry(2.6, 1);
+  // Palm crowns (D-QA5): a layered, volumetric crown — a rounded core plus
+  // six drooping fronds (instanced cones) around it. The old single
+  // icosahedron squashed to 0.42 height read as a flat green disc
+  // ("lollipop") from low angles; the fronds break the disc silhouette
+  // from every angle. +2 draw calls, ~+2.8k triangles for the whole city.
+  const crownGeo = new THREE.IcosahedronGeometry(1.7, 1);
   const crownMat = mat(0x2f7a4a, 0.9);
   const crowns = new THREE.InstancedMesh(crownGeo, crownMat, ctx.palmSpots.length);
+  const frondGeo = new THREE.ConeGeometry(0.55, 3.0, 5);
+  const frondMat = mat(0x357f52, 0.9);
+  const fronds = new THREE.InstancedMesh(frondGeo, frondMat, ctx.palmSpots.length * 6);
+  const UP = new THREE.Vector3(0, 1, 0);
+  const frondDir = new THREE.Vector3();
   ctx.palmSpots.forEach(([x, z], i) => {
     const lean = (seeded(800 + i) - 0.5) * 0.14;
     dummy.position.set(x, 2.7, z);
@@ -912,26 +960,48 @@ function makeVegetation(world, ctx) {
     dummy.scale.set(1, 1, 1);
     dummy.updateMatrix();
     trunks.setMatrixAt(i, dummy.matrix);
-    dummy.position.set(x + lean * 8, 5.9, z);
+    dummy.position.set(x + lean * 8, 6.0, z);
     dummy.rotation.set(0, seeded(820 + i) * Math.PI, 0);
-    dummy.scale.set(1, 0.42, 1);
+    dummy.scale.set(1, 0.85, 1);
     dummy.updateMatrix();
     crowns.setMatrixAt(i, dummy.matrix);
+    const phase = seeded(830 + i) * 0.9;
+    for (let k = 0; k < 6; k += 1) {
+      const a = (k * Math.PI) / 3 + phase;
+      const ca = Math.cos(a);
+      const sa = Math.sin(a);
+      frondDir.set(ca * 0.85, -0.45, sa * 0.85).normalize();
+      dummy.position.set(x + lean * 8 + ca * 1.05, 6.05, z + sa * 1.05);
+      dummy.quaternion.setFromUnitVectors(UP, frondDir);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      fronds.setMatrixAt(i * 6 + k, dummy.matrix);
+    }
   });
   trunks.castShadow = true;
   crowns.castShadow = true;
+  fronds.castShadow = true;
   trunks.instanceMatrix.needsUpdate = true;
   crowns.instanceMatrix.needsUpdate = true;
+  fronds.instanceMatrix.needsUpdate = true;
   world.add(trunks);
   world.add(crowns);
+  world.add(fronds);
 
   // Broadleaf trees (instanced trunks + crowns) from parks / yards / streets.
   const treeGeo = new THREE.BoxGeometry(0.5, 2.8, 0.5);
   const treeTrunkMat = mat(0x735039, 0.95);
   const treeTrunks = new THREE.InstancedMesh(treeGeo, treeTrunkMat, Math.max(ctx.treeSpots.length, 1));
-  const treeCrownGeo = new THREE.IcosahedronGeometry(2.1, 1);
+  // Broadleaf crowns (D-QA5): a main blob plus a smaller satellite blob
+  // offset up/sideways (deterministic per tree) in a slightly lighter
+  // green. The pair reads as a full canopy instead of one smooth ball,
+  // from low angles as well as from above. +1 draw call.
+  const treeCrownGeo = new THREE.IcosahedronGeometry(2.0, 1);
   const treeCrownMat = mat(0x2d694d, 0.9);
   const treeCrowns = new THREE.InstancedMesh(treeCrownGeo, treeCrownMat, Math.max(ctx.treeSpots.length, 1));
+  const satGeo = new THREE.IcosahedronGeometry(1.1, 1);
+  const satMat = mat(0x35795a, 0.9);
+  const satCrowns = new THREE.InstancedMesh(satGeo, satMat, Math.max(ctx.treeSpots.length, 1));
   ctx.treeSpots.forEach(([x, z], i) => {
     const s = 0.85 + seeded(900 + i) * 0.5;
     dummy.position.set(x, 1.4 * s, z);
@@ -940,16 +1010,30 @@ function makeVegetation(world, ctx) {
     dummy.updateMatrix();
     treeTrunks.setMatrixAt(i, dummy.matrix);
     dummy.position.set(x, (2.8 + 1.6) * s, z);
-    dummy.scale.set(s, s * 0.9, s);
+    dummy.rotation.set(0, seeded(940 + i) * Math.PI, 0);
+    dummy.scale.set(s, s * 0.95, s);
     dummy.updateMatrix();
     treeCrowns.setMatrixAt(i, dummy.matrix);
+    const sa = seeded(950 + i) * Math.PI * 2;
+    dummy.position.set(
+      x + Math.cos(sa) * 0.9 * s,
+      (2.8 + 1.6) * s + 1.0 * s,
+      z + Math.sin(sa) * 0.9 * s,
+    );
+    dummy.rotation.set(0, 0, 0);
+    dummy.scale.set(s, s * 0.9, s);
+    dummy.updateMatrix();
+    satCrowns.setMatrixAt(i, dummy.matrix);
   });
   treeTrunks.castShadow = true;
   treeCrowns.castShadow = true;
+  satCrowns.castShadow = true;
   treeTrunks.instanceMatrix.needsUpdate = true;
   treeCrowns.instanceMatrix.needsUpdate = true;
+  satCrowns.instanceMatrix.needsUpdate = true;
   world.add(treeTrunks);
   world.add(treeCrowns);
+  world.add(satCrowns);
 }
 
 // ------------------------------------------------------------------ street furniture
@@ -1147,7 +1231,15 @@ export function buildWorld(scene) {
       const seed = (gx + 5) * 19 + (gz + 5) * 31;
       if (district === 'downtown') {
         buildTower(ctx, cx, cz, seed, 'downtown', 30, 64);
-        ctx.treeSpots.push([cx - 13, cz + 13], [cx + 13, cz - 13]);
+        // D-QA9: the old corner spots ([cx-13, cz+13] / [cx+13, cz-13])
+        // sat 5 units from both road centrelines — inside the 6.5-unit
+        // road half-width, i.e. ON the intersection asphalt in the
+        // driving lane. The chase camera passed ~2 units from the (5,-5)
+        // trunk, so it filled the frame as a big brown box. Both trees
+        // now sit on the block's south plot edge, 9 units from every
+        // road centreline (clear of asphalt) and clear of the tower
+        // (worst 3D crown clearance ~2.6 units, crown radius <= 2.7).
+        ctx.treeSpots.push([cx - 9, cz - 9], [cx + 9, cz - 9]);
       } else if (district === 'waterfront') {
         buildTower(ctx, cx, cz, seed, 'waterfront', 34, 60);
       } else if (district === 'commercial') {
@@ -1160,7 +1252,10 @@ export function buildWorld(scene) {
           addBox(world, 1.2, 1.2, 1.2, mat(0x7a5a3a, 0.9), cx - 1, 0.6, cz + oz * 0.4 + 2.2);
           addBox(world, 1.0, 0.8, 1.0, mat(0x8a6a4a, 0.9), cx + 1.2, 0.4, cz + oz * 0.4 - 2);
         }
-        ctx.treeSpots.push([cx + 13, cz + 13]);
+        // D-QA9: same as downtown — the old [cx+13, cz+13] spot sat on
+        // the intersection asphalt. One street tree on the south plot
+        // edge instead, 9 units from every road centreline.
+        ctx.treeSpots.push([cx - 9, cz - 9]);
       } else if (district === 'nightlife') {
         buildShop(ctx, cx, cz, -6.5, 0, seed, 'nightlife', true);
         buildShop(ctx, cx, cz, 6.5, 2, seed + 60, 'nightlife', true);
@@ -1174,7 +1269,12 @@ export function buildWorld(scene) {
       } else if (district === 'residential') {
         buildHouse(ctx, cx, cz, -6, -5, seed);
         buildHouse(ctx, cx, cz, 6, 5, seed + 50);
-        ctx.treeSpots.push([cx, cz - 12]);
+        // D-QA9: the old [cx, cz-12] street tree sat 6 units from the
+        // south road centreline — inside the 6.5-unit road half-width,
+        // i.e. on the asphalt. It now stands on the block's south-east
+        // plot corner, 9 units from every road centreline and ~9.5 units
+        // from the nearest house wall.
+        ctx.treeSpots.push([cx + 9, cz - 9]);
       } else if (district === 'industrial') {
         buildWarehouse(ctx, cx, cz, seed);
       } else if (district === 'yard') {

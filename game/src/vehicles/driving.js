@@ -26,6 +26,61 @@ function getDrive(car) {
   return u.drive;
 }
 
+// ---------------------------------------------------------------- car-vs-car
+// D-QA2: driveVehicle used to check buildings only, so the player car drove
+// straight through stopped traffic. Cars are oriented rectangles in the XZ
+// plane (length along the facing yaw, width across it); a circle test would
+// false-positive on oncoming traffic in the next lane (lanes are 5.4 apart,
+// two half-widths only ~2.2), so this is a small SAT test instead.
+
+/** Footprint of a car at a proposed position: centre, yaw, half extents. */
+function carRect(car, x, z) {
+  const spec = (car.userData && car.userData.spec) || {};
+  return {
+    x, z, yaw: car.rotation.y,
+    hl: (spec.length || 4.25) / 2,
+    hw: (spec.width || 2.15) / 2,
+  };
+}
+
+/** Separating-axis overlap test for two car footprints. */
+function rectsOverlap(a, b) {
+  const axes = [
+    [Math.sin(a.yaw), Math.cos(a.yaw)],
+    [Math.cos(a.yaw), -Math.sin(a.yaw)],
+    [Math.sin(b.yaw), Math.cos(b.yaw)],
+    [Math.cos(b.yaw), -Math.sin(b.yaw)],
+  ];
+  for (const [ax, az] of axes) {
+    const pa = a.x * ax + a.z * az;
+    const pb = b.x * ax + b.z * az;
+    const ra = a.hl * Math.abs(Math.sin(a.yaw) * ax + Math.cos(a.yaw) * az)
+      + a.hw * Math.abs(Math.cos(a.yaw) * ax - Math.sin(a.yaw) * az);
+    const rb = b.hl * Math.abs(Math.sin(b.yaw) * ax + Math.cos(b.yaw) * az)
+      + b.hw * Math.abs(Math.cos(b.yaw) * ax - Math.sin(b.yaw) * az);
+    if (Math.abs(pa - pb) > ra + rb) return false;
+  }
+  return true;
+}
+
+/**
+ * The other cars the driven car can hit. Prefer an explicit list
+ * (env.collidesCars — traffic + police, passed by the caller); without one,
+ * fall back to the driven car's scene siblings that are vehicles
+ * (makeVehicle sets userData.spec). Characters, buildings and the mission
+ * marker have no spec, so they never match. Traffic / police AI is untouched
+ * by this — they still brake, yield and overtake on their own logic; this
+ * only stops the *driven* car from passing through them.
+ */
+function otherCars(car, env) {
+  if (Array.isArray(env.collidesCars)) {
+    return env.collidesCars.filter((o) => o && o !== car);
+  }
+  const parent = car.parent;
+  if (!parent || !parent.children) return [];
+  return parent.children.filter((o) => o !== car && o.userData && o.userData.spec);
+}
+
 /**
  * Drive one car for one frame.
  *
@@ -33,9 +88,12 @@ function getDrive(car) {
  * @param {object} input — { forward, back, left, right, handbrake } booleans
  *   (W/S/A/D + Space). `forward`/`back` may also be 0..1 magnitudes.
  * @param {number} dt — frame time, seconds (clamped to 0.05 inside).
- * @param {object} [env] — { collides(x, z, r): boolean, bounds }.
+ * @param {object} [env] — { collides(x, z, r): boolean, bounds,
+ *   collidesCars?: Array<THREE.Group> }.
  *   Pass collidesBuilding bound to the world buildings; when omitted the car
  *   only respects the world bounds (traffic never needs it, the player does).
+ *   collidesCars lists the traffic + police cars to collide with; when
+ *   omitted, the driven car's scene siblings that are vehicles are used.
  * @returns {{ collided: boolean, impact: number, speed: number, braking: boolean }}
  */
 export function driveVehicle(car, input, dt, env = {}) {
@@ -120,12 +178,29 @@ export function driveVehicle(car, input, dt, env = {}) {
   const collides = env.collides || null;
   let collided = false;
   let impact = 0;
+  // Car-vs-car, checked at the proposed position (D-QA2). Only a *new*
+  // overlap blocks: a car already overlapping (a police ram while parked,
+  // a traffic car that pulled alongside) must be able to separate, or the
+  // player could wedge stuck with no escape.
+  const others = otherCars(car, env);
+  const myNow = carRect(car, car.position.x, car.position.z);
+  const myNext = carRect(car, nx, nz);
+  const hitsCar = others.some((o) => {
+    const ob = carRect(o, o.position.x, o.position.z);
+    return !rectsOverlap(myNow, ob) && rectsOverlap(myNext, ob);
+  });
   if (collides && collides(nx, nz, 1.6)) {
     impact = Math.abs(speed);
     collided = true;
     speed *= -0.22; // bounce off the wall
     if (impact > 3) applyDamage(car, Math.min(28, impact * 1.1), Math.sign(dx + dz) || 1);
     // Stay put this frame: the next frame drives away from the wall.
+  } else if (hitsCar) {
+    impact = Math.abs(speed);
+    collided = true;
+    speed *= -0.22; // bounce off the other car, same as a wall
+    if (impact > 3) applyDamage(car, Math.min(12, impact * 0.8), Math.sign(dx + dz) || 1);
+    // Stay put this frame; the other car is untouched (its own AI owns it).
   } else {
     car.position.x = nx;
     car.position.z = nz;

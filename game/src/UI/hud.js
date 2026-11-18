@@ -12,7 +12,16 @@ import { MISSION_POINTS, GANG_ZONE } from '../missions/missions.js';
 
 const $ = (id) => document.getElementById(id);
 
-let toastTimer = 0;
+// Wall-clock deadline (performance.now, ms) for the visible toast.
+// D-QA6: the old timer ran on game dt (clamped 0.04 s/frame), so a 3 s
+// toast could stay up for minutes of wall time whenever frames were slow —
+// and every new toast silently re-armed it. Wall time dismisses in ~3.5 s
+// no matter the frame rate; tickToast() is still called every frame by
+// main.js, it just checks the wall clock now instead of consuming dt.
+let toastDeadline = 0;
+
+// Last rendered wanted level (updateHud rebuilds the stars only on change).
+let lastWanted = -1;
 
 /** District name for a world position, shown under the minimap. */
 export function districtFor(x, z) {
@@ -30,13 +39,13 @@ export function showToast(msg) {
   const el = $('toast');
   el.textContent = msg;
   el.classList.add('show');
-  toastTimer = 3.0;
+  toastDeadline = performance.now() + 3500;
 }
 
-export function tickToast(dt) {
-  if (toastTimer > 0) {
-    toastTimer -= dt;
-    if (toastTimer <= 0) $('toast').classList.remove('show');
+export function tickToast() {
+  if (toastDeadline && performance.now() >= toastDeadline) {
+    toastDeadline = 0;
+    $('toast').classList.remove('show');
   }
 }
 
@@ -51,8 +60,28 @@ export function updateHud(G) {
   const kmh = G.currentCar ? Math.round(Math.abs(G.currentCar.userData.speed) * 5) : 0;
   $('speed').textContent = G.currentCar ? kmh + ' KM/H' : 'ON FOOT';
   $('weapon').textContent = `${G.weapon.name.toUpperCase()} ${G.weapon.mag}/${G.weapon.reserve === Infinity ? '∞' : G.weapon.reserve}`;
+  // D-QA8: the old `.hot` class coloured the whole row red, so even the
+  // empty stars read red. Only the filled stars go red (with the glow);
+  // empty stars stay dim grey, so ★★★☆☆ reads at a glance. The row keeps
+  // its `hot` class for the blink animation; the spans' own colours win
+  // over the inherited row colour. Rebuilt only when the level changes.
   const wantedEl = $('wanted');
-  wantedEl.textContent = '★'.repeat(G.wanted) + '☆'.repeat(5 - G.wanted);
+  if (G.wanted !== lastWanted) {
+    lastWanted = G.wanted;
+    wantedEl.textContent = '';
+    if (G.wanted > 0) {
+      const on = document.createElement('span');
+      on.textContent = '★'.repeat(G.wanted);
+      on.style.color = '#ff5268';
+      on.style.textShadow = '0 0 12px rgba(255,82,104,.8)';
+      wantedEl.appendChild(on);
+    }
+    const off = document.createElement('span');
+    off.textContent = '☆'.repeat(5 - G.wanted);
+    off.style.color = 'rgba(238,248,255,0.35)';
+    off.style.textShadow = 'none';
+    wantedEl.appendChild(off);
+  }
   wantedEl.classList.toggle('hot', G.wanted > 0);
   $('healthText').textContent = health + '%';
   const healthFill = $('healthFill');

@@ -64,7 +64,7 @@ export const TIME_PRESETS = {
   },
   night: {
     label: 'Night', sun: 0x9db8ff, sunIntensity: 0.55, sunPos: [40, 120, -60],
-    hemiSky: 0x2a3550, hemiGround: 0x0e1218, hemiIntensity: 0.7, fillIntensity: 0.25,
+    hemiSky: 0x2a3550, hemiGround: 0x0e1218, hemiIntensity: 0.8, fillIntensity: 0.3,
     fog: 0x1a2436, fogNear: 60, fogFar: 220, exposure: 1.05, bg: 0x0b1626,
     ocean: 0x0e2838, oceanRoughness: 0.15, oceanMetalness: 0.55,
   },

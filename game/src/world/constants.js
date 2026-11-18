@@ -90,17 +90,22 @@ export const NEON_SIGNS = [
 // Day/night keyframes. `hour` is 0..24. Colours are hex; sunI/hemiI are
 // light intensities; lampGlow 0..1 drives street-lamp + window emissive;
 // sunPos is [x, y] in the sky dome (z fixed at -60, west-facing sunset side).
+// D-QA4 (Nov 2026): true-night keyframes (0 / 22 / 24) used to run at
+// sunI 0.25 / hemiI 0.3, which left facades near-black — only lit windows
+// read. They now run at sunI 0.55 / hemiI 0.6 (pre-dawn 0.45 / 0.5): facades
+// stay readable while the night mood, lamp glow and window emissive are
+// untouched. Golden / dusk / noon keyframes are unchanged.
 // The default game state is the sunset keyframe (hour 18.7) so the shipped
 // look is unchanged unless the coordinator calls setTimeOfDay().
 export const DAY_KEYFRAMES = [
-  { hour: 0, top: 0x0a0e27, mid: 0x1b2340, horizon: 0x2c2a4a, fog: 0x141a2e, sun: 0x8fa8ff, sunI: 0.25, hemiI: 0.3, lampGlow: 1, sunPos: [140, 120] },
-  { hour: 5, top: 0x141a3d, mid: 0x2c2a55, horizon: 0x4a3a5e, fog: 0x1c2036, sun: 0x8fa8ff, sunI: 0.3, hemiI: 0.35, lampGlow: 1, sunPos: [160, 90] },
+  { hour: 0, top: 0x0a0e27, mid: 0x1b2340, horizon: 0x2c2a4a, fog: 0x141a2e, sun: 0x8fa8ff, sunI: 0.55, hemiI: 0.6, lampGlow: 1, sunPos: [140, 120] },
+  { hour: 5, top: 0x141a3d, mid: 0x2c2a55, horizon: 0x4a3a5e, fog: 0x1c2036, sun: 0x8fa8ff, sunI: 0.45, hemiI: 0.5, lampGlow: 1, sunPos: [160, 90] },
   { hour: 6.5, top: 0x4a3a7a, mid: 0xd96a6a, horizon: 0xffb36b, fog: 0xd98a7a, sun: 0xffc27a, sunI: 1.4, hemiI: 0.9, lampGlow: 0.55, sunPos: [300, 42] },
   { hour: 9, top: 0x3f6fb5, mid: 0x7fb2d9, horizon: 0xf2c98a, fog: 0xbccfd8, sun: 0xfff2cf, sunI: 2.6, hemiI: 1.6, lampGlow: 0, sunPos: [190, 210] },
   { hour: 12, top: 0x2f6fc2, mid: 0x79b5e0, horizon: 0xcfe8ef, fog: 0xc3d9e2, sun: 0xffffff, sunI: 2.8, hemiI: 1.8, lampGlow: 0, sunPos: [0, 300] },
   { hour: 16, top: 0x35548f, mid: 0x9a7ab0, horizon: 0xffb37a, fog: 0xd9a586, sun: 0xffd9a0, sunI: 2.4, hemiI: 1.5, lampGlow: 0.1, sunPos: [-190, 210] },
   { hour: 18.7, top: 0x3d2b6e, mid: 0xc65a7a, horizon: 0xff9e57, fog: 0xe08a6d, sun: 0xffe1b2, sunI: 2.4, hemiI: 2.0, lampGlow: 0.45, sunPos: [-320, 58] },
   { hour: 20, top: 0x241a4d, mid: 0x8a3a6e, horizon: 0xe06a4a, fog: 0x7a4a5e, sun: 0xff9a6a, sunI: 0.9, hemiI: 0.7, lampGlow: 0.9, sunPos: [-330, 30] },
-  { hour: 22, top: 0x0a0e27, mid: 0x1b2340, horizon: 0x2c2a4a, fog: 0x141a2e, sun: 0x8fa8ff, sunI: 0.25, hemiI: 0.3, lampGlow: 1, sunPos: [140, 120] },
-  { hour: 24, top: 0x0a0e27, mid: 0x1b2340, horizon: 0x2c2a4a, fog: 0x141a2e, sun: 0x8fa8ff, sunI: 0.25, hemiI: 0.3, lampGlow: 1, sunPos: [140, 120] },
+  { hour: 22, top: 0x0a0e27, mid: 0x1b2340, horizon: 0x2c2a4a, fog: 0x141a2e, sun: 0x8fa8ff, sunI: 0.55, hemiI: 0.6, lampGlow: 1, sunPos: [140, 120] },
+  { hour: 24, top: 0x0a0e27, mid: 0x1b2340, horizon: 0x2c2a4a, fog: 0x141a2e, sun: 0x8fa8ff, sunI: 0.55, hemiI: 0.6, lampGlow: 1, sunPos: [140, 120] },
 ];
