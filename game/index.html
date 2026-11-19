@@ -16,11 +16,11 @@ body.vignette-on #vignette{opacity:1}
 #hud{position:fixed;inset:0;pointer-events:none}
 #hud.hidden{display:none}
 .panel{background:linear-gradient(135deg,rgba(8,18,30,.88),rgba(8,18,30,.58));border:1px solid var(--line);box-shadow:0 10px 36px rgba(0,0,0,.22);backdrop-filter:blur(9px);border-radius:12px}
-#brand{position:absolute;left:22px;top:18px;padding:12px 16px;min-width:205px;border-top:2px solid var(--coral)}
+#brand{position:absolute;left:20px;top:16px;padding:10px 14px;min-width:200px;border-top:2px solid var(--coral)}
 #brand .kicker{font-size:9px;letter-spacing:3px;color:var(--cyan);font-weight:800}
 #brand .name{font-size:21px;line-height:1.1;font-weight:950;letter-spacing:1.3px}
 #brand .sub{font-size:9px;color:#9fb7c7;letter-spacing:2px;margin-top:5px}
-#stats{position:absolute;right:20px;top:18px;padding:12px 15px;min-width:210px;text-align:right}
+#stats{position:absolute;right:20px;top:16px;padding:10px 14px;min-width:236px;text-align:right}
 .statline{display:flex;justify-content:space-between;gap:22px;font-size:11px;margin:4px 0;color:#a9c2d3}
 .statline b{color:#fff;font-size:13px;letter-spacing:.5px}
 #cash{color:var(--gold);font-size:15px}
@@ -28,18 +28,51 @@ body.vignette-on #vignette{opacity:1}
 #wanted.hot{color:#ff5268;text-shadow:0 0 12px rgba(255,82,104,.8);animation:blink 1s steps(2) infinite}
 @keyframes blink{50%{opacity:.55}}
 #fps{color:#7dd8a8}
-#mission{position:absolute;left:22px;top:126px;width:min(340px,calc(100vw - 44px));padding:13px 15px;border-left:3px solid var(--gold)}
+/* PERF is a debug readout: hidden from every normal frame, shown only
+   when the page is loaded with ?debug=1 (body.debug-perf). */
+#perfRow{display:none}
+body.debug-perf #perfRow{display:flex}
+body.debug-perf #slots{top:230px}
+body.debug-perf #pauseBtn{top:294px}
+/* Police pill: red while a unit has eyes on the player, amber while the
+   search is on, dim when the street is quiet. */
+#policePill{padding:2px 8px;border-radius:20px;font-size:10px;font-weight:850;letter-spacing:1px;background:rgba(120,140,160,.25);color:#c8d8e2}
+#policePill.sight{background:rgba(255,82,104,.28);color:#ff8ba0;box-shadow:0 0 10px rgba(255,82,104,.45)}
+#policePill.searching{background:rgba(255,209,102,.22);color:var(--gold)}
+#traceText{color:var(--gold)}
+#mission{position:absolute;left:20px;top:116px;width:min(340px,calc(100vw - 40px));padding:12px 14px;border-left:3px solid var(--gold)}
 .eyebrow{font-size:9px;letter-spacing:2px;color:var(--cyan);font-weight:800;text-transform:uppercase}
 #missionStage{float:right;color:var(--gold);letter-spacing:1px}
 #missionTitle{font-weight:850;font-size:15px;margin:5px 0}
 #objective{font-size:11px;line-height:1.45;color:#b8cbd7}
+#missionMeta{display:flex;justify-content:space-between;align-items:baseline;margin-top:8px;font-size:11px}
+#missionTimer{color:#fff;font-weight:850;letter-spacing:1px;font-variant-numeric:tabular-nums}
+#stageLabel{color:var(--gold);font-size:10px;font-weight:800;letter-spacing:1px}
+#stageBar{height:5px;background:#243544;border-radius:8px;overflow:hidden;margin-top:6px}
+#stageFill{height:100%;width:12%;background:linear-gradient(90deg,#ffd166,#ff9e57);transition:width .3s}
+#nextMission{font-size:10px;color:var(--gold);margin-top:7px;letter-spacing:.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Police response panel: only ever filled from window.SuncoastPolice —
+   when that API is absent the panel stays hidden, never guessed. */
+#policePanel{position:absolute;left:20px;top:258px;width:min(340px,calc(100vw - 40px));padding:10px 14px;border-left:3px solid #ff5268}
+#policePanel.hidden{display:none}
+#policeHeader{font-size:9px;letter-spacing:2px;color:#ff8ba0;font-weight:850}
+.pp-row{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11px;margin-top:7px;color:#e6f2f8}
+.pp-row .pp-name{font-weight:800;letter-spacing:.5px}
+.pp-row .pp-dist{color:#9fb7c7;font-variant-numeric:tabular-nums}
+.pp-status{padding:1px 7px;border-radius:20px;font-size:9px;font-weight:850;letter-spacing:1px;background:rgba(102,229,255,.16);color:var(--cyan);white-space:nowrap}
+.pp-status.search{background:rgba(255,209,102,.18);color:var(--gold)}
+.pp-status.spot{background:rgba(255,122,89,.2);color:var(--coral)}
+.pp-more{font-size:10px;color:#9fb7c7;margin-top:7px}
 #toast{position:absolute;left:50%;top:22px;transform:translateX(-50%);padding:10px 16px;max-width:min(500px,90vw);font-size:12px;text-align:center;opacity:0;transition:opacity .25s;border-top:2px solid var(--gold)}
 #toast.show{opacity:1}
-#minimapWrap{position:absolute;left:22px;top:262px;width:176px;padding:8px}
-#minimap{display:block;width:160px;height:160px;border-radius:7px;background:#101e2a}
-#mapLabel{font-size:8px;letter-spacing:2px;color:var(--gold);text-align:center;margin-top:5px;font-weight:800}
-#bottom{position:absolute;left:22px;bottom:20px;display:flex;gap:8px;align-items:flex-end}
-#healthBox{width:185px;padding:10px 12px}
+/* Round minimap: the canvas is clipped to a circle by its own border
+   radius, and the wrapper matches so the frame reads as one disc. */
+#minimapWrap{position:absolute;left:20px;top:412px;width:190px;padding:8px;border-radius:50% 50% 12px 12px}
+#minimap{display:block;width:150px;height:150px;border-radius:50%;background:#101e2a}
+#mapLabel{font-size:9px;letter-spacing:2px;color:var(--gold);text-align:center;margin-top:6px;font-weight:800}
+#mapStreet{font-size:8px;letter-spacing:1.5px;color:#9fb7c7;text-align:center;margin-top:2px;font-weight:700}
+#bottom{position:absolute;left:20px;bottom:20px;display:flex;gap:8px;align-items:flex-end}
+#healthBox{width:205px;padding:10px 12px}
 .smallLabel{font-size:8px;letter-spacing:1.8px;color:#9fb7c7;font-weight:800}
 .smallLabel span{color:#fff;float:right}
 .bar{height:6px;background:#243544;border-radius:8px;overflow:hidden;margin-top:7px}
@@ -48,25 +81,62 @@ body.vignette-on #vignette{opacity:1}
 #healthFill.low{background:linear-gradient(90deg,#ff5268,#ff7a59)}
 #armorFill{height:100%;width:0%;background:linear-gradient(90deg,#66e5ff,#4d8dff);transition:width .2s}
 #armorRow{margin-top:6px}
+#repRow{margin-top:8px}
+#repRow .smallLabel #repText{float:none}
+#repValue{white-space:nowrap}
+#repFill{height:100%;width:0%;background:linear-gradient(90deg,#ffd166,#ff9e57);transition:width .25s}
 #vehicleHint{font-size:10px;color:#d4e8f3;padding:10px 12px;min-width:145px}
-#speedo{position:absolute;right:20px;bottom:20px;text-align:right;padding:10px 16px;min-width:150px}
+/* Weapon slots: four, under the stats panel. Locked slots read as locked;
+   the active weapon is outlined in gold. Ammo is live from game state.
+   Slot backgrounds are OPAQUE solid dark navy (MINOR-1 fix, re-QA v4):
+   semi-transparent gradient + opacity on locked slots let poles/trees
+   show through and cover the SMG/SHOTGUN labels. Locked slots dim their
+   text instead of using element opacity, so the background stays solid. */
+#slots{position:absolute;right:20px;top:198px;display:flex;gap:6px;pointer-events:none}
+.slot{width:54px;padding:6px 2px 5px;text-align:center;border:1px solid var(--line);border-radius:8px;background:linear-gradient(135deg,#0b1b2d,#08121e)}
+.slot .slotKey{font-size:8px;color:#7d9db0;font-weight:800}
+.slot .slotName{font-size:9px;font-weight:850;letter-spacing:.5px;margin-top:1px}
+.slot .slotAmmo{font-size:9px;color:var(--gold);margin-top:2px;font-variant-numeric:tabular-nums}
+.slot.active{border-color:var(--gold);box-shadow:0 0 12px rgba(255,209,102,.35)}
+.slot.locked .slotName{color:#7d9db0}
+.slot.locked .slotAmmo{color:#7d9db0}
+#pauseBtn{position:absolute;right:20px;top:262px;pointer-events:auto}
+#speedo{position:absolute;right:20px;bottom:20px;text-align:right;padding:12px 16px;min-width:212px}
 #speedo.hidden{display:none}
-#speedoNum{font-size:44px;line-height:1;font-weight:950;letter-spacing:-1px;background:linear-gradient(180deg,#fff,#ffd166);-webkit-background-clip:text;background-clip:text;color:transparent}
+#speedoNum{font-size:44px;line-height:1;font-weight:950;letter-spacing:-1px;background:linear-gradient(180deg,#fff,#ffd166);-webkit-background-clip:text;background-clip:text;color:transparent;font-variant-numeric:tabular-nums}
 #speedoUnit{font-size:11px;color:var(--cyan);font-weight:800;letter-spacing:2px}
+#speedoGear{font-size:15px;color:#fff;font-weight:950;margin-left:6px}
 #speedoVehicle{font-size:9px;color:#9fb7c7;letter-spacing:2px;margin-top:3px}
-#actions{position:absolute;right:20px;bottom:132px;display:flex;gap:7px;pointer-events:auto}
+.condRow{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px;font-size:8px;letter-spacing:1.8px;color:#9fb7c7;font-weight:800}
+.condRow .condBar{flex:1;height:5px;background:#243544;border-radius:8px;overflow:hidden;display:block}
+#condFill,#nitroFill{display:block}
+#condFill{height:100%;width:100%;background:linear-gradient(90deg,#5de0ad,#a7f36c)}
+#condFill.mid{background:linear-gradient(90deg,#ffd166,#ffb347)}
+#condFill.low{background:linear-gradient(90deg,#ff5268,#ff7a59)}
+#condText{color:#fff;font-size:10px}
+#nitroRow.dim{opacity:.55}
+#nitroFill{height:100%;width:0%;background:linear-gradient(90deg,#66e5ff,#b18cff,#ff7ad9)}
+#nitroText{color:#fff;font-size:10px}
+/* Radio: one panel only, filled from window.SuncoastRadio — no second
+   chip anywhere, and hidden entirely while the API is absent. */
+#radioPanel{position:absolute;right:20px;bottom:172px;width:236px;padding:10px 14px}
+#radioPanel.hidden{display:none}
+#radioPanel .eyebrow{color:#ff8fd0}
+#radioText{font-size:11px;line-height:1.45;color:#e6f2f8;margin-top:4px}
+#radioText b{color:var(--gold)}
 .uiBtn{border:1px solid var(--line);background:rgba(8,18,30,.86);color:#dff7ff;border-radius:7px;padding:9px 12px;font-size:9px;font-weight:850;letter-spacing:1px;cursor:pointer}
 .uiBtn:hover{border-color:var(--cyan);color:var(--cyan)}
+.uiBtn:disabled{opacity:.4;cursor:default}
+.uiBtn:disabled:hover{border-color:var(--line);color:#dff7ff}
 #prompt{position:absolute;left:50%;top:62%;transform:translateX(-50%);padding:8px 14px;font-size:11px;font-weight:800;letter-spacing:2px;color:#fff;opacity:0;transition:opacity .2s}
 #prompt.show{opacity:1}
-#controls{position:absolute;left:22px;bottom:76px;font-size:9px;color:#9fb7c7;text-align:left;white-space:nowrap;text-shadow:0 2px 8px #000}
 kbd{display:inline-block;border:1px solid #557082;border-bottom-width:2px;border-radius:4px;padding:2px 5px;color:#eaf8ff;font:800 9px ui-monospace,monospace;margin:0 2px}
 #crosshair{position:absolute;left:50%;top:50%;width:16px;height:16px;transform:translate(-50%,-50%);opacity:.75}
 #crosshair:before,#crosshair:after{content:"";position:absolute;background:#d9f8ff;box-shadow:0 0 5px #4ddcff}
 #crosshair:before{left:7px;top:1px;width:2px;height:14px}#crosshair:after{left:1px;top:7px;width:14px;height:2px}
 /* Settings panel: pointer-events auto so every control stays clickable
    (D8: no pointer lock on start, HUD buttons must stay mouse-usable). */
-#settingsPanel{position:absolute;right:20px;top:150px;width:264px;padding:16px;pointer-events:auto;z-index:5}
+#settingsPanel{position:absolute;right:20px;top:150px;width:264px;padding:16px;pointer-events:auto;z-index:50}
 #settingsPanel.hidden{display:none}
 #settingsPanel h2{margin:0 0 12px;font-size:13px;letter-spacing:2px}
 #settingsPanel label{display:block;font-size:9px;letter-spacing:1.5px;color:#9fb7c7;font-weight:800;margin:10px 0 4px}
@@ -75,16 +145,41 @@ kbd{display:inline-block;border:1px solid #557082;border-bottom-width:2px;border
 #settingsPanel .row{display:flex;justify-content:space-between;align-items:center}
 #settingsPanel .row b{font-size:11px;color:#fff}
 #closeSettings{margin-top:14px;width:100%}
-#startCard{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 45%,rgba(9,35,50,.25),rgba(2,7,13,.82));pointer-events:auto;transition:opacity .4s}
+/* Title screen: logo card over the live city. Bottom-centre stays clear
+   of the card so a staged frame keeps its dialog space. */
+#startCard{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 45%,rgba(9,35,50,.25),rgba(2,7,13,.82));pointer-events:auto;transition:opacity .4s;z-index:30}
 #startCard.hidden{opacity:0;pointer-events:none}
-#startPanel{width:min(540px,calc(100vw - 34px));padding:28px;border-radius:17px;border:1px solid rgba(102,229,255,.35);background:linear-gradient(145deg,rgba(9,24,39,.96),rgba(7,13,23,.94));box-shadow:0 25px 100px #0009}
+#startPanel{width:min(560px,calc(100vw - 34px));padding:26px 28px;border-radius:17px;border:1px solid rgba(102,229,255,.35);background:linear-gradient(145deg,rgba(9,24,39,.96),rgba(7,13,23,.94));box-shadow:0 25px 100px #0009}
 #startPanel .over{font-size:10px;letter-spacing:4px;color:var(--cyan);font-weight:900}
 #startPanel h1{font-size:clamp(28px,6vw,48px);line-height:.98;margin:10px 0 12px;letter-spacing:-1.5px}
 #startPanel h1 span{background:linear-gradient(90deg,#ffd166,#ff7a59);-webkit-background-clip:text;background-clip:text;color:transparent}
-#startPanel p{font-size:12px;line-height:1.6;color:#a9c1d0;max-width:440px}
+#startPanel p{font-size:12px;line-height:1.6;color:#a9c1d0;max-width:460px}
 #startPanel .disclaimer{font-size:9px;color:#7893a4;margin-top:15px}
-#startBtn{margin-top:17px;padding:13px 19px;background:var(--cyan);color:#06111a;border:0;border-radius:7px;font-weight:950;letter-spacing:1.5px;cursor:pointer}
-@media(max-width:650px){#brand{left:10px;top:10px;min-width:0;padding:9px 11px}#brand .name{font-size:16px}#stats{right:10px;top:10px;min-width:155px;padding:9px 10px}#mission{left:10px;top:100px;padding:10px;width:220px}#minimapWrap{left:10px;top:216px;width:102px;padding:6px}#minimap{width:88px;height:88px}#actions{right:10px;bottom:118px;flex-direction:column}.uiBtn{padding:7px 10px;font-size:8px}#bottom{left:10px;bottom:10px}#healthBox{width:135px}#vehicleHint{display:none}#controls{left:10px;bottom:56px;font-size:8px;max-width:60vw;white-space:normal}#speedo{right:10px;bottom:10px;min-width:0;padding:8px 10px}#speedoNum{font-size:30px}#settingsPanel{right:10px;top:120px;width:min(264px,calc(100vw - 20px))}}
+#titleButtons{display:flex;gap:10px;margin-top:17px;flex-wrap:wrap}
+#startBtn{padding:13px 19px;background:var(--cyan);color:#06111a;border:0;border-radius:7px;font-weight:950;letter-spacing:1.5px;cursor:pointer}
+#continueBtn,#controlsBtn{padding:13px 19px;border:1px solid var(--line);background:rgba(8,18,30,.86);color:#dff7ff;border-radius:7px;font-weight:950;letter-spacing:1.5px;cursor:pointer}
+#continueBtn:disabled{opacity:.4;cursor:default}
+#titleControls{margin-top:14px;font-size:10px;color:#a9c1d0;line-height:2.1}
+#titleControls.hidden{display:none}
+#titleSkyline{display:block;margin:2px 0 4px}
+/* Pause menu: full-screen dim over the frozen game, stats + actions. */
+#pauseMenu{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(2,7,13,.72);backdrop-filter:blur(3px);pointer-events:auto;z-index:40}
+#pauseMenu.hidden{display:none}
+#pausePanel{width:min(520px,calc(100vw - 34px));padding:24px 26px;border-radius:17px;border:1px solid rgba(102,229,255,.35);background:linear-gradient(145deg,rgba(9,24,39,.97),rgba(7,13,23,.95));box-shadow:0 25px 100px #0009}
+#pausePanel .over{font-size:10px;letter-spacing:4px;color:var(--cyan);font-weight:900}
+#pausePanel h2{font-size:30px;margin:8px 0 12px;letter-spacing:1px}
+#pauseProgressText{font-size:11px;letter-spacing:1px;color:#a9c1d0}
+#pauseProgressText b{color:var(--gold)}
+#pauseProgressBar{height:6px;background:#243544;border-radius:8px;overflow:hidden;margin-top:7px}
+#pauseProgressFill{height:100%;width:0%;background:linear-gradient(90deg,#66e5ff,#ffd166)}
+#pauseMission{font-size:12px;font-weight:800;margin-top:10px;letter-spacing:.5px}
+#pauseStats{display:grid;grid-template-columns:1fr 1fr;gap:0 26px;margin-top:12px}
+#pauseStats .statline{border-bottom:1px solid rgba(112,220,255,.12);padding:6px 0;margin:0}
+#pauseControls{font-size:10px;color:#a9c1d0;line-height:2.1;margin-top:14px}
+#resumeBtn{margin-top:16px;width:100%;padding:13px;background:var(--cyan);color:#06111a;border:0;border-radius:7px;font-weight:950;letter-spacing:1.5px;cursor:pointer}
+.pauseBtnGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.pauseBtnGrid .uiBtn{width:100%;padding:11px 8px}
+@media(max-width:650px){#brand{left:10px;top:10px;min-width:0;padding:9px 11px}#brand .name{font-size:16px}#stats{right:10px;top:10px;min-width:155px;padding:9px 10px}#mission{left:10px;top:100px;padding:10px;width:220px}#policePanel{left:10px;top:238px;width:220px;padding:8px 10px}#minimapWrap{left:50%;transform:translateX(-50%);top:auto;bottom:8px;width:102px;padding:6px}#minimap{width:88px;height:88px}#slots{right:auto;left:50%;transform:translateX(-50%);top:10px}#slots .slot{width:44px}#pauseBtn{right:10px;top:232px}#bottom{left:10px;bottom:10px}#healthBox{width:135px}#vehicleHint{display:none}#speedo{right:10px;bottom:10px;min-width:0;padding:8px 10px}#speedoNum{font-size:30px}#radioPanel{right:auto;left:calc(50% - 78px);top:110px;bottom:auto;width:190px}#settingsPanel{right:10px;top:120px;width:min(264px,calc(100vw - 20px))}}
 </style>
 </head>
 <body>
@@ -94,19 +189,25 @@ kbd{display:inline-block;border:1px solid #557082;border-bottom-width:2px;border
   <div id="brand" class="panel"><div class="kicker">OPEN WORLD / SUNCOAST</div><div class="name">SUNCOAST<br>HEATLINE</div><div class="sub">A CITY THAT NEVER COOLS</div></div>
   <div id="stats" class="panel">
     <div class="statline"><span>CASH</span><b id="cash">$ 1,250</b></div>
+    <div class="statline"><span>DAY / TIME</span><b id="clock">DAY 1 · 17:24</b></div>
     <div class="statline"><span>VEHICLE</span><b id="speed">ON FOOT</b></div>
     <div class="statline"><span>WEAPON</span><b id="weapon">PISTOL 12/∞</b></div>
     <div class="statline"><span>WANTED</span><b id="wanted">☆☆☆☆☆</b></div>
-    <div class="statline"><span>PERF</span><b id="fps">— FPS</b></div>
+    <div class="statline"><span>POLICE</span><b><span id="policePill">—</span></b></div>
+    <div class="statline"><span>TRACE</span><b id="traceText">0%</b></div>
+    <div class="statline" id="perfRow"><span>PERF</span><b id="fps">— FPS</b></div>
   </div>
-  <div id="mission" class="panel"><div class="eyebrow">CURRENT OPERATION <span id="missionStage">MISSION 1/6</span></div><div id="missionTitle">A Favor in the Heat</div><div id="objective">Find the fixer marked on your map.</div></div>
+  <div id="mission" class="panel"><div class="eyebrow">CURRENT OPERATION <span id="missionStage">MISSION 1/8</span></div><div id="missionTitle">A Favor in the Heat</div><div id="objective">Find the fixer marked on your map.</div><div id="missionMeta"><span id="missionTimer">00:00</span><span id="stageLabel">STAGE 1/8</span></div><div id="stageBar"><div id="stageFill"></div></div><div id="nextMission">NEXT ▸ Loose Cargo</div></div>
+  <div id="policePanel" class="panel hidden"><div id="policeHeader">SUNCOAST POLICE RESPONSE — 0 UNITS</div><div id="policeRows"></div></div>
   <div id="toast" class="panel"></div>
   <div id="crosshair"></div>
   <div id="prompt" class="panel">E — ENTER VEHICLE</div>
-  <div id="bottom"><div id="healthBox" class="panel"><div class="smallLabel">HEALTH <span id="healthText">100%</span></div><div class="bar"><div id="healthFill"></div></div><div id="armorRow"><div class="smallLabel">ARMOR <span id="armorText">0%</span></div><div class="bar"><div id="armorFill"></div></div></div></div><div id="vehicleHint" class="panel">Explore the city. Stay sharp.</div></div>
-  <div id="minimapWrap" class="panel"><canvas id="minimap" width="160" height="160"></canvas><div id="mapLabel">SUNCOAST DISTRICT</div></div>
-  <div id="speedo" class="panel hidden"><span id="speedoNum">0</span> <span id="speedoUnit">KM/H</span><div id="speedoVehicle">VENTO STRADA</div></div>
-  <div id="actions"><button class="uiBtn" id="saveBtn">SAVE GAME</button><button class="uiBtn" id="loadBtn">LOAD SAVE</button><button class="uiBtn" id="audioBtn">SOUND: ON</button><button class="uiBtn" id="settingsBtn">SETTINGS</button><button class="uiBtn" id="fsBtn">FULLSCREEN</button></div>
+  <div id="bottom"><div id="healthBox" class="panel"><div class="smallLabel">HEALTH <span id="healthText">100%</span></div><div class="bar"><div id="healthFill"></div></div><div id="armorRow" style="display:none"><div class="smallLabel">ARMOR <span id="armorText">0%</span></div><div class="bar"><div id="armorFill"></div></div></div><div id="repRow"><div class="smallLabel"><span id="repText">REP 1 — NOBODY</span><span id="repValue">0 / 100</span></div><div class="bar"><div id="repFill"></div></div></div></div><div id="vehicleHint" class="panel">Explore the city. Stay sharp.</div></div>
+  <div id="minimapWrap" class="panel"><canvas id="minimap" width="150" height="150"></canvas><div id="mapLabel">SUNCOAST DISTRICT</div><div id="mapStreet">HEATLINE AVE</div></div>
+  <div id="slots"><div class="slot active"><div class="slotKey">1</div><div class="slotName">PISTOL</div><div class="slotAmmo">12/∞</div></div><div class="slot locked"><div class="slotKey">2</div><div class="slotName">SMG</div><div class="slotAmmo">LOCKED</div></div><div class="slot locked"><div class="slotKey">3</div><div class="slotName">SHOTGUN</div><div class="slotAmmo">LOCKED</div></div><div class="slot"><div class="slotKey">4</div><div class="slotName">BAT</div><div class="slotAmmo">—</div></div></div>
+  <button class="uiBtn" id="pauseBtn">❚❚ PAUSE</button>
+  <div id="radioPanel" class="panel hidden"><div class="eyebrow">RADIO</div><div id="radioText"></div></div>
+  <div id="speedo" class="panel hidden"><span id="speedoNum">0</span> <span id="speedoUnit">KM/H</span><span id="speedoGear">G1</span><div id="speedoVehicle">PALMERA</div><div class="condRow"><span>CONDITION</span><span class="condBar"><span id="condFill"></span></span><span id="condText">100%</span></div><div class="condRow" id="nitroRow"><span>NITRO</span><span class="condBar"><span id="nitroFill"></span></span><span id="nitroText">0%</span></div></div>
   <div id="settingsPanel" class="panel hidden">
     <h2>SETTINGS</h2>
     <label for="qualitySel">GRAPHICS QUALITY</label>
@@ -124,19 +225,52 @@ kbd{display:inline-block;border:1px solid #557082;border-bottom-width:2px;border
     <div class="row"><label style="margin:0">BACKGROUND MUSIC</label><button class="uiBtn" id="musicToggle">ON</button></div>
     <button class="uiBtn" id="closeSettings">CLOSE — ESC</button>
   </div>
-  <div id="controls"><kbd>WASD</kbd> MOVE / DRIVE &nbsp; <kbd>SHIFT</kbd> SPRINT &nbsp; <kbd>E</kbd> ENTER / EXIT &nbsp; <kbd>SPACE</kbd> JUMP &nbsp; <kbd>CLICK</kbd> FIRE &nbsp; <kbd>R</kbd> RELOAD &nbsp; <kbd>1/2</kbd> WEAPON &nbsp; <kbd>H</kbd> HIDE HUD &nbsp; <kbd>M</kbd> MUTE &nbsp; <kbd>F</kbd> FULLSCREEN</div>
+</div>
+<div id="pauseMenu" class="hidden">
+  <div id="pausePanel" class="panel">
+    <div class="over">SUNCOAST: HEATLINE</div>
+    <h2>PAUSED</h2>
+    <div id="pauseProgressText">STORY PROGRESS — <b>0%</b></div>
+    <div id="pauseProgressBar"><div id="pauseProgressFill"></div></div>
+    <div id="pauseMission">MISSION 1/8 — A Favor in the Heat</div>
+    <div id="pauseStats">
+      <div class="statline"><span>CASH</span><b id="pauseMoney">$1,250</b></div>
+      <div class="statline"><span>DAY</span><b id="pauseDay">DAY 1</b></div>
+      <div class="statline"><span>JOBS COMPLETE</span><b id="pauseJobs">0</b></div>
+      <div class="statline"><span>TAKEDOWNS</span><b id="pauseTakedowns">0</b></div>
+      <div class="statline"><span>HIGHEST WANTED</span><b id="pauseMaxWanted">☆☆☆☆☆</b></div>
+      <div class="statline"><span>CARS TAKEN</span><b id="pauseCars">0</b></div>
+    </div>
+    <div id="pauseControls"><kbd>WASD</kbd> MOVE / DRIVE <kbd>SHIFT</kbd> SPRINT <kbd>E</kbd> ENTER / EXIT <kbd>SPACE</kbd> JUMP <kbd>CLICK</kbd> FIRE <kbd>T</kbd> RELOAD <kbd>R</kbd> RADIO <kbd>1–4</kbd> WEAPON <kbd>H</kbd> HIDE HUD <kbd>M</kbd> MUTE <kbd>F</kbd> FULLSCREEN <kbd>ESC</kbd> RESUME <kbd>P</kbd> SAVE <kbd>L</kbd> LOAD</div>
+    <button id="resumeBtn">RESUME</button>
+    <div class="pauseBtnGrid">
+      <button class="uiBtn" id="saveBtn">SAVE GAME</button>
+      <button class="uiBtn" id="loadBtn">LOAD SAVE</button>
+      <button class="uiBtn" id="audioBtn">SOUND: ON</button>
+      <button class="uiBtn" id="settingsBtn">SETTINGS</button>
+      <button class="uiBtn" id="fsBtn">FULLSCREEN</button>
+      <button class="uiBtn" id="quitBtn">QUIT TO TITLE</button>
+    </div>
+  </div>
 </div>
 <div id="startCard">
   <div id="startPanel">
     <div class="over">A NEW CITY. A NEW SCORE.</div>
+    <svg id="titleSkyline" width="120" height="34" viewBox="0 0 120 34" aria-hidden="true"><circle cx="96" cy="10" r="8" fill="#ffd166"/><rect x="0" y="18" width="14" height="16" fill="#1d3a52"/><rect x="17" y="10" width="12" height="24" fill="#24445e"/><rect x="32" y="20" width="16" height="14" fill="#1d3a52"/><rect x="51" y="6" width="11" height="28" fill="#2a4d68"/><rect x="65" y="14" width="14" height="20" fill="#1d3a52"/><rect x="82" y="20" width="12" height="14" fill="#24445e"/><rect x="104" y="16" width="16" height="18" fill="#1d3a52"/><rect x="0" y="32" width="120" height="2" fill="#ff7a59"/><path d="M22 10 q-3 -4 -7 -4 M22 10 q3 -4 7 -4 M22 10 q0 -5 0 -8" stroke="#2f7a4a" stroke-width="1.6" fill="none"/><path d="M58 6 q-3 -4 -7 -4 M58 6 q3 -4 7 -4 M58 6 q0 -5 0 -8" stroke="#2f7a4a" stroke-width="1.6" fill="none"/></svg>
     <h1>SUNCOAST:<br><span>HEATLINE</span></h1>
     <p>Build your name in a living coastal city. Explore on foot, take the wheel, complete story jobs, survive the police response and make it back to your safehouse.</p>
-    <button id="startBtn">ENTER THE CITY</button>
+    <div id="titleButtons">
+      <button id="startBtn">NEW GAME</button>
+      <button id="continueBtn" disabled>CONTINUE</button>
+      <button id="controlsBtn">CONTROLS</button>
+    </div>
+    <div id="titleControls" class="hidden"><kbd>WASD</kbd> MOVE / DRIVE &nbsp; <kbd>SHIFT</kbd> SPRINT &nbsp; <kbd>E</kbd> ENTER / EXIT &nbsp; <kbd>SPACE</kbd> JUMP / HANDBRAKE &nbsp; <kbd>CLICK</kbd> FIRE &nbsp; <kbd>T</kbd> RELOAD &nbsp; <kbd>R</kbd> RADIO &nbsp; <kbd>1–4</kbd> WEAPON &nbsp; <kbd>H</kbd> HIDE HUD &nbsp; <kbd>M</kbd> MUTE &nbsp; <kbd>F</kbd> FULLSCREEN &nbsp; <kbd>ESC</kbd> PAUSE &nbsp; <kbd>P</kbd> SAVE &nbsp; <kbd>L</kbd> LOAD</div>
     <div class="disclaimer">Original independent game. No GTA assets, characters, logos or map data are used. All art, audio and code in this game are original.</div>
   </div>
 </div>
-<script type="importmap">{"imports":{"three":"./vendor/three.module.min.js","three/addons/loaders/GLTFLoader.js":"./vendor/GLTFLoader.js"}}</script>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.min.js","three/addons/loaders/GLTFLoader.js":"./vendor/GLTFLoader.min.js"}}</script>
 <script type="module" src="./src/core/main.js"></script>
+<script type="module" src="./src/UI/pause.js"></script>
 <script type="module">
 // Settings panel wiring (rendering scope): reads/writes the persisted
 // settings, pushes changes into the live game via window.__game, and owns
@@ -215,7 +349,6 @@ function toggleFullscreen() {
 $('fsBtn').addEventListener('click', toggleFullscreen);
 addEventListener('keydown', (e) => {
   if (e.code === 'KeyF' && !e.repeat) toggleFullscreen();
-  if (e.code === 'Escape') panel.classList.add('hidden');
 });
 
 syncControls();

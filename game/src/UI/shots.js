@@ -15,7 +15,9 @@
 import * as THREE from 'three';
 import { mulberry32, clamp } from '../core/config.js';
 import { GANG_ZONE, MISSION_POINTS, placeMarker } from '../missions/missions.js';
-import { spawnPoliceCar } from '../vehicles/vehicles.js';
+import { spawnPoliceCar } from '../AI/police.js'; // NOT vehicles.js: the
+// v1 spawner there never assigns a callsign, so staged units read UNKNOWN;
+// the AI spawner is identical plus callsign + search-state fields.
 
 function putPlayerOnFoot(G, x, z, yaw) {
   G.currentCar = null;

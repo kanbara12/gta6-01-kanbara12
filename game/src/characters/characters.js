@@ -20,8 +20,8 @@
 // movement and collision in main.js depend on it.
 
 import * as THREE from 'three';
-import { GLTFLoader } from '../../vendor/GLTFLoader.js';
-import { clone as cloneSkinned } from '../../vendor/utils/SkeletonUtils.js';
+import { GLTFLoader } from '../../vendor/GLTFLoader.min.js';
+import { clone as cloneSkinned } from '../../vendor/utils/SkeletonUtils.min.js';
 import { WORLD, mulberry32 } from '../core/config.js';
 import { collidesBuilding, nearestRoadCoord } from '../world/world.js';
 
@@ -360,28 +360,34 @@ function pickPedTarget(p, buildings, rng) {
 export function spawnPedestrians(scene, buildings, seed = 7) {
   const rng = mulberry32(seed);
   const peds = [];
-  for (let i = 0; i < 14; i += 1) {
-    const p = createCharacter(PED_COLOURS[i % PED_COLOURS.length]);
-    // Sidewalk position: near a road, offset from its centre line.
-    // Validated clear of buildings (margin 2.5, well above the 0.6 walk
-    // radius) so no pedestrian spawns wedged against a wall (QA defect D2);
-    // after 10 blocked tries fall back to the nearest road intersection,
-    // which is always clear of buildings.
-    let x = 0;
-    let z = 0;
-    let onVertical = true;
+  // Place one pedestrian on a sidewalk (8.5 u off a road centreline),
+  // validated clear of buildings (margin 2.5, well above the 0.6 walk
+  // radius) so no pedestrian spawns wedged against a wall (QA defect
+  // D2). Returns [x, z], or null when no clear spot was found in 10
+  // tries — the caller then SKIPS that pedestrian. The old code fell
+  // back to the nearest road intersection, which dropped unplaceable
+  // peds onto the zebra crossing, where they read as a mission NPC
+  // about to be run over (frame 2).
+  const trySidewalkSpot = (downtown) => {
     for (let attempt = 0; attempt < 10; attempt += 1) {
-      const roadX = (Math.floor(rng() * 9) - 4) * WORLD.grid;
-      const roadZ = (Math.floor(rng() * 9) - 4) * WORLD.grid;
-      onVertical = rng() < 0.5;
-      x = onVertical ? roadX + 8.5 : (rng() * 2 - 1) * 140;
-      z = onVertical ? (rng() * 2 - 1) * 140 : roadZ + 8.5;
-      if (!collidesBuilding(buildings, x, z, 2.5)) break;
-      if (attempt === 9) {
-        x = nearestRoadCoord(x);
-        z = nearestRoadCoord(z);
-      }
+      const roadX = downtown
+        ? [0, 36][Math.floor(rng() * 2)]
+        : (Math.floor(rng() * 9) - 4) * WORLD.grid;
+      const roadZ = downtown
+        ? [-108, -72, -36][Math.floor(rng() * 3)]
+        : (Math.floor(rng() * 9) - 4) * WORLD.grid;
+      const onVertical = rng() < 0.5;
+      const x = onVertical ? roadX + 8.5 : (downtown ? -10 + rng() * 60 : (rng() * 2 - 1) * 140);
+      const z = onVertical ? (downtown ? -120 + rng() * 90 : (rng() * 2 - 1) * 140) : roadZ + 8.5;
+      if (!collidesBuilding(buildings, x, z, 2.5)) return [x, z];
     }
+    return null;
+  };
+  const spawnOne = (i, downtown) => {
+    const spot = trySidewalkSpot(downtown);
+    if (!spot) return;
+    const [x, z] = spot;
+    const p = createCharacter(PED_COLOURS[i % PED_COLOURS.length]);
     p.position.set(x, 0, z);
     p.userData.isPed = true;
     p.userData.speed = 1.2 + rng() * 0.9;
@@ -398,7 +404,12 @@ export function spawnPedestrians(scene, buildings, seed = 7) {
     p.userData.dodgeDZ = 0;
     scene.add(p);
     peds.push(p);
-  }
+  };
+  for (let i = 0; i < 14; i += 1) spawnOne(i, false);
+  // v4: six more pedestrians pinned to downtown sidewalks (roads x 0/36,
+  // z -108/-72/-36), so the downtown frames read as a lived-in street
+  // instead of an empty set (frame 2: 0 pedestrians on the sidewalks).
+  for (let i = 14; i < 20; i += 1) spawnOne(i, true);
   return peds;
 }
 

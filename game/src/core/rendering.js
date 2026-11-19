@@ -9,12 +9,9 @@
 // chain. No composer addons are vendored (only three.module.min.js ships
 // locally) and a composer pass would cost a full extra fullscreen pass on
 // every frame. Colour grading is done with ACES tone mapping + exposure
-// per time-of-day, plus a zero-cost CSS vignette (index.html).
-//
-// Reference direction only (Marisol Heat, judge 993.343): a sunset coastal
-// city with a dense commercial HUD. Nothing from that entry was copied —
-// no assets, code, text or names — only the direction: warm low sun,
-// pink-orange haze, readable shaded faces, dense HUD.
+// per time-of-day, plus a zero-cost CSS vignette (index.html). The art
+// direction is our own: warm low sun, pink-orange haze, readable shaded
+// faces, dense HUD.
 
 import * as THREE from 'three';
 import { TIME_PRESETS, COLOURS, clamp, lerp } from './config.js';
@@ -24,8 +21,10 @@ const _c1 = new THREE.Color();
 const _c2 = new THREE.Color();
 const _v = new THREE.Vector3();
 
-/** Preset name -> hour of day for the World sky dome (setTimeOfDay hook). */
-export const TIME_HOURS = { golden: 17.4, noon: 12, dusk: 18.8, night: 22 };
+/** Preset name -> hour of day for the World sky dome (setTimeOfDay hook).
+ *  G-09 (v3): golden sits at 18.3 now (was 17.4) so the default frame
+ *  shows the low sunset sun the sky dome was built for. */
+export const TIME_HOURS = { golden: 18.3, noon: 12, dusk: 18.8, night: 22 };
 
 function makeBlobTexture() {
   const c = document.createElement('canvas');
@@ -37,6 +36,25 @@ function makeBlobTexture() {
   g.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** Soft round puff for the dust Points cloud. Without a map, PointsMaterial
+ *  draws every particle as a hard-edged square; this radial falloff (opaque
+ *  white core fading to fully transparent at the rim) makes the same points
+ *  read as dust instead of white boxes behind a fast car. */
+function makeDustTexture() {
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 64;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 2, 32, 32, 30);
+  g.addColorStop(0, 'rgba(255,255,255,0.85)');
+  g.addColorStop(0.55, 'rgba(255,255,255,0.32)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
@@ -70,6 +88,9 @@ export function createEnvironment(scene, renderer, settings, world) {
   scene.background = new THREE.Color(time.bg);
   scene.fog = new THREE.Fog(time.fog, time.fogNear, time.fogFar);
   renderer.toneMappingExposure = time.exposure;
+  // The sunset presets in config.js already carry the warmed fog /
+  // exposure, so the opening frame and every transition lerp toward the
+  // same warm grade — there is no separate warm-up override here.
 
   const hemi = new THREE.HemisphereLight(time.hemiSky, time.hemiGround, time.hemiIntensity);
   scene.add(hemi);
@@ -148,7 +169,8 @@ export function createEnvironment(scene, renderer, settings, world) {
   for (let i = 0; i < DUST_MAX; i += 1) dustPos[i * 3 + 1] = -100;
   dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
   const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({
-    color: 0xcbb59a, size: 0.9, transparent: true, opacity: 0.32,
+    color: 0xcbb59a, size: 0.7, transparent: true, opacity: 0.26,
+    map: makeDustTexture(), alphaTest: 0.02,
     sizeAttenuation: true, depthWrite: false,
   }));
   dust.frustumCulled = false;

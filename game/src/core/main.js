@@ -12,6 +12,7 @@ import { WORLD, clamp, parseQuery } from './config.js';
 import { createRenderer, createEnvironment } from './rendering.js';
 import { loadSettings, saveSettings, applyQualityToDom, presetFor } from './settings.js';
 import { buildWorld, collidesBuilding, animateOcean } from '../world/world.js';
+import { SAFEHOUSE_POS, SAFEHOUSE_CAM_RADIUS } from '../world/safehouse.js';
 import {
   createCharacter, animateWalk, animateIdle,
   spawnPedestrians, updatePedestrians, spawnEnemies, updateEnemies,
@@ -22,17 +23,19 @@ import {
   makeCar, spawnTraffic, updateTraffic,
   driveVehicle, vehicleCameraParams, setHeadlights, attachHeadlightBeams,
 } from '../vehicles/vehicles.js';
-import { resetDriveState } from '../vehicles/driving.js';
+import { resetDriveState, vehicleTelemetry } from '../vehicles/driving.js';
 import { updatePolice, spawnPoliceCar } from '../AI/police.js';
+import { createHelicopter, updateHelicopter, helicopterState } from '../AI/helicopter.js';
 import {
-  WEAPONS,
+  WEAPONS, RESERVE_AMMO,
   fire as fireModule,
   reloadWeapon as reloadWeaponModule,
   updateBullets as updateBulletsModule,
+  getWeaponState,
 } from '../combat/combat.js';
 import {
   GANG_ZONE, MISSION_POINTS, createMissionMarker, animateMarker,
-  updateMissions, placeMarker,
+  updateMissions, placeMarker, onStageStart,
 } from '../missions/missions.js';
 import { AudioEngine } from '../audio/audio.js';
 import { createInput } from './input.js';
@@ -61,7 +64,7 @@ const env = createEnvironment(scene, renderer, settings, null);
 applyQualityToDom(presetFor(settings.quality));
 
 // ---------------------------------------------------------------- state
-const { world, buildings, ocean } = buildWorld(scene);
+const { world, buildings, ocean, palmSpots } = buildWorld(scene);
 env.world = world; // lets env.setWet prefer a world.setWet hook if one ships
 // World time/weather hooks (World Specialist): if world.js exports
 // setTimeOfDay(hour)/setWet(amount), bind them so one call drives both
@@ -103,6 +106,12 @@ const G = {
   seed: query.seed,
   weapon: { ...WEAPONS.pistol, mag: 12, reserve: Infinity },
   hasSmg: false,
+  hasShotgun: false,
+  hasBat: true,
+  _shotgunReserve: 24,
+  _shotgunMag: 6,
+  _lastNitro01: 1,
+  lastScore: null,
   lastShotAt: 0,
   reloading: false,
   reloadTimer: 0,
@@ -114,9 +123,21 @@ const G = {
   actorPosition() { return (this.currentCar || this.player).position; },
   placeMarker() { placeMarker(this.marker, this.missionIndex); },
   selectWeapon(id, mag) {
+    // Cache the outgoing weapon's ammo so switching back restores it
+    // instead of silently refilling (the slot display reads these caches).
+    const cur = this.weapon;
+    if (cur) {
+      if (cur.id === 'smg') { this._smgReserve = cur.reserve; this._smgMag = cur.mag; }
+      if (cur.id === 'shotgun') { this._shotgunReserve = cur.reserve; this._shotgunMag = cur.mag; }
+    }
     const def = WEAPONS[id] || WEAPONS.pistol;
-    this.weapon = { ...def, mag: mag ?? def.magSize, reserve: id === 'smg' ? 120 : Infinity };
+    let reserve = Infinity;
+    if (id === 'smg') reserve = this._smgReserve ?? RESERVE_AMMO.smg;
+    if (id === 'shotgun') reserve = this._shotgunReserve ?? RESERVE_AMMO.shotgun;
+    const cachedMag = id === 'smg' ? this._smgMag : id === 'shotgun' ? this._shotgunMag : undefined;
+    this.weapon = { ...def, mag: mag ?? cachedMag ?? def.magSize, reserve };
     if (id === 'smg') this.hasSmg = true;
+    if (id === 'shotgun') this.hasShotgun = true;
   },
 };
 
@@ -166,6 +187,7 @@ G.enemies = spawnEnemies(scene, GANG_ZONE);
 G.peds = spawnPedestrians(scene, buildings);
 G.marker = createMissionMarker(scene);
 placeMarker(G.marker, 0);
+G.heli = createHelicopter(scene);
 
 // SMG pickup crate beside the fixer.
 const smgCrate = new THREE.Mesh(
@@ -176,6 +198,16 @@ smgCrate.position.set(6, 0.35, 6);
 smgCrate.castShadow = true;
 scene.add(smgCrate);
 let smgTaken = false;
+
+// Shotgun pickup crate at the crew-yard edge (found before the yard fight).
+const shotgunCrate = new THREE.Mesh(
+  new THREE.BoxGeometry(1.1, 0.7, 1.1),
+  new THREE.MeshStandardMaterial({ color: 0xe85d3d, emissive: 0x5a1a00, roughness: 0.4 }),
+);
+shotgunCrate.position.set(58, 0.35, -58);
+shotgunCrate.castShadow = true;
+scene.add(shotgunCrate);
+let shotgunTaken = false;
 
 // ---------------------------------------------------------------- input
 let playerYaw = 0;
@@ -192,9 +224,11 @@ function onKey(code, repeat) {
     G.audio.setMuted(!G.audio.muted);
     updateHud(G);
   }
-  if (code === 'KeyR' && !repeat) reloadWeapon();
+  if (code === 'KeyT' && !repeat) reloadWeapon();
   if (code === 'Digit1' && !repeat) { G.selectWeapon('pistol'); setWeapon(G.player, 'pistol'); updateHud(G); }
   if (code === 'Digit2' && !repeat && G.hasSmg) { G.selectWeapon('smg'); setWeapon(G.player, 'smg'); updateHud(G); }
+  if (code === 'Digit3' && !repeat && G.hasShotgun) { G.selectWeapon('shotgun'); setWeapon(G.player, 'shotgun'); updateHud(G); }
+  if (code === 'Digit4' && !repeat) { G.selectWeapon('bat'); setWeapon(G.player, 'bat'); updateHud(G); }
 }
 
 G.input = createInput(renderer.domElement, {
@@ -225,6 +259,10 @@ $('startBtn').addEventListener('click', () => {
   $('startCard').classList.add('hidden');
   G.gameStarted = true;
   showToast('WELCOME TO SUNCOAST • FIND THE FIXER');
+  // D-FQA02: onStageStart only fired on a stage CHANGE, so the stage-0
+  // briefing ("You came. Good…") never showed on the first playthrough.
+  // Announce stage 0 once, here at start; its toast replaces WELCOME.
+  onStageStart(G, 0);
   // NOTE (D8 fix): do NOT auto-lock the pointer here. While pointer lock is
   // active the browser retargets every mouse event to the canvas, so the HUD
   // buttons (SAVE GAME / LOAD SAVE / SOUND) become unclickable and each click
@@ -239,7 +277,7 @@ addEventListener('resize', () => {
 
 // ---------------------------------------------------------------- combat
 // Shooting lives in src/combat/combat.js; these wrappers keep the existing
-// call sites (onKey KeyR, input onFire, animate loop) unchanged, and add
+// call sites (onKey KeyT, input onFire, animate loop) unchanged, and add
 // the character animation hooks (shoot/reload poses, on foot only).
 function reloadWeapon() {
   if (reloadWeaponModule(G)) playReload(G.player);
@@ -322,12 +360,23 @@ function moveActor(dt) {
       left: !!keys.KeyA,
       right: !!keys.KeyD,
       handbrake: !!keys.Space, // Space is jump on foot only, free in a car
+      nitro: !!(keys.ShiftLeft || keys.ShiftRight), // Shift is sprint on foot, nitro in a car
     }, dt, {
       collides: (x, z, r) => collidesBuilding(buildings, x, z, r),
     });
     if (result.collided && result.impact > 3) {
       showToast('CRASH • VEHICLE ' + Math.round(car.userData.health) + '%');
     }
+    // Score events: drift / near-miss payouts bank here (driving.js only
+    // reports them; money + toast live here, next to the crash toast).
+    if (result.events) {
+      for (const ev of result.events) {
+        G.money += ev.amount;
+        G.lastScore = { label: ev.label, amount: ev.amount, at: Date.now() };
+        showToast(`${ev.label} • +$${ev.amount}`);
+      }
+    }
+    G._lastNitro01 = result.nitro01 ?? G._lastNitro01 ?? 1;
     playerYaw = car.rotation.y;
     G.audio.setEngine(
       Math.abs(car.userData.speed) / (car.userData.spec?.topSpeed || 25), true,
@@ -402,6 +451,57 @@ function updatePoliceSpawns(dt) {
 }
 
 // ---------------------------------------------------------------- camera
+// True when a palm crown sits too close to the lens: crowns sit ~6.05 u up
+// with fronds drooping to ~2.5 u and reaching ~3.2 u out from the trunk
+// (v4: two rings of curved blades), so a trunk within ~3.5 u of the lens
+// (XZ) at frond height puts a blade across the frame. Tested against the LENS position, not the lens-to-
+// player segment: a palm standing 2.5 u beside the road is always ~2.5 u
+// from the segment no matter how far the camera pulls in, so a segment
+// test bottoms the camera out at the minimum distance and parks the lens
+// inside the crown (seen in fix-verify R4). A palm beside the road is
+// harmless once the lens itself is clear of it.
+function palmNearLens(cam, spots) {
+  if (cam.y < 1.8 || cam.y > 7.2) return false;
+  for (let i = 0; i < spots.length; i += 1) {
+    const [x, z] = spots[i];
+    if (Math.hypot(x - cam.x, z - cam.z) < 3.5) return true;
+  }
+  return false;
+}
+
+// D-QA04 (round 2): the round-1 guard only moved `desired`; the real
+// camera lerps toward it, so while driving the actual lens lagged behind
+// and sat inside a crown even though `desired` was clear. This guard
+// runs on the ACTUAL lens position after the lerp, and pushes it
+// sideways — radially away from the nearest trunk — instead of pulling
+// it along the chase axis, which cannot clear a palm standing beside
+// the road. It also runs on `desired` first, so the lerp target itself
+// is clear and the two do not fight. Clearance 3.7 u (guard threshold
+// 3.5 u + margin); total push capped at 6 u so the framing stays a
+// chase shot.
+function pushLensClearOfPalms(pos, spots) {
+  if (!Array.isArray(spots) || !spots.length) return;
+  if (pos.y < 1.8 || pos.y > 7.2) return;
+  let pushed = 0;
+  for (let i = 0; i < 24 && pushed < 6; i += 1) {
+    let nx = 0;
+    let nz = 0;
+    let nd = Infinity;
+    for (let j = 0; j < spots.length; j += 1) {
+      const d = Math.hypot(spots[j][0] - pos.x, spots[j][1] - pos.z);
+      if (d < nd) { nd = d; nx = spots[j][0]; nz = spots[j][1]; }
+    }
+    if (nd >= 3.7) return;
+    let dx = pos.x - nx;
+    let dz = pos.z - nz;
+    if (nd < 0.001) { dx = 1; dz = 0; } else { dx /= nd; dz /= nd; }
+    const step = Math.min(3.7 - nd + 0.2, 6 - pushed);
+    pos.x += dx * step;
+    pos.z += dz * step;
+    pushed += step;
+  }
+}
+
 function updateCamera(dt) {
   if (G.shotCamera) {
     if (!G.cameraSnapped) {
@@ -416,13 +516,82 @@ function updateCamera(dt) {
   const params = G.currentCar
     ? vehicleCameraParams(G.currentCar)
     : { distance: 7.2, height: 4.1, fov: 68, lookHeight: 1.6 };
-  const distance = params.distance;
-  const height = params.height;
+  // G-20 (v3, N-QA2): on foot near the safehouse the old 7.2 u / 4.1 u
+  // camera sat behind the shop awning — the striped awning filled half
+  // the frame and hid the player. Tuck the camera in closer, higher,
+  // and looking down more steeply, on foot only: at 4.4 u back and
+  // 6.6 u up the lens clears the awning line (awnings top out ~3.9 u)
+  // and looks over it at the player. A pull-in guard walks the camera
+  // toward the player while its position is inside a building
+  // footprint, so a facade can never sit between lens and player here.
+  const inSafehouse = !G.currentCar
+    && Math.hypot(p.x - SAFEHOUSE_POS.x, p.z - SAFEHOUSE_POS.z) < SAFEHOUSE_CAM_RADIUS;
+  let distance = params.distance;
+  let height = params.height;
+  let lookHeight = params.lookHeight;
+  // v4 (chase framing): at wanted >= 3 the helicopter is on station and
+  // police ram from directly behind — the old tight chase lens let a
+  // tailing unit sit exactly between lens and player car and hide it
+  // (frame 3: PALMERA invisible, SKY-1 clipped at the top edge). Pull
+  // the lens back and to the side (3/4 view, so a tailing unit can no
+  // longer hide the player car), lift the look point and widen the FOV
+  // so the helicopter fits whole in the frame. Height rises only a
+  // little: a higher lens aims further down and would push the heli
+  // back out of the top edge. The palm guard below still runs on the
+  // offset target and on the actual lens.
+  const pursuit = !!G.currentCar && (G.wanted || 0) >= 3;
+  if (pursuit) {
+    distance += 3.0;
+    height += 0.5;
+    lookHeight += 0.6;
+  }
+  if (inSafehouse) {
+    distance = 4.4;
+    height = 6.6;
+    lookHeight = 0.9;
+  }
   const desired = new THREE.Vector3(
     p.x - Math.sin(yaw) * distance,
     p.y + height,
     p.z - Math.cos(yaw) * distance,
   );
+  if (inSafehouse) {
+    const dirX = p.x - desired.x;
+    const dirZ = p.z - desired.z;
+    const len = Math.hypot(dirX, dirZ) || 1;
+    let d = distance;
+    while (d > 2.2 && collidesBuilding(buildings, desired.x, desired.z, 0.5)) {
+      d -= 0.5;
+      desired.set(p.x - (dirX / len) * d, p.y + height, p.z - (dirZ / len) * d);
+    }
+  }
+  // D-QA04: palm-crown pull-in. On the beach road the chase camera sits
+  // at frond height (~5 u) and a crown right by the lens fills the frame
+  // with a diagonal frond. Walk the camera toward the player (same
+  // pattern as the safehouse guard above) until the lens is clear of
+  // every crown — never closer than 3 u, so the framing stays a chase
+  // shot instead of a close-up.
+  if (Array.isArray(palmSpots) && palmSpots.length && !inSafehouse) {
+    let d = distance;
+    while (d > 3 && palmNearLens(desired, palmSpots)) {
+      d -= 0.5;
+      desired.set(p.x - Math.sin(yaw) * d, p.y + height, p.z - Math.cos(yaw) * d);
+    }
+    // Round 2: the pull-in above only clears the target; push the
+    // target sideways too, so the lerp is not fighting a target that
+    // sits inside a crown beside the road.
+    pushLensClearOfPalms(desired, palmSpots);
+  }
+  // v4 pursuit 3/4 offset (applied AFTER the palm pull-in above, which
+  // rebuilds `desired` from the chase axis): shift the lens to the side
+  // of the chase direction, so a police unit ramming from directly
+  // behind the player can no longer sit exactly on the lens-player
+  // line and hide the player car. The actual-lens palm guard below
+  // still runs after the lerp, so the offset lens stays clear of crowns.
+  if (pursuit && !inSafehouse) {
+    desired.x += -Math.cos(yaw) * 3.4;
+    desired.z += Math.sin(yaw) * 3.4;
+  }
   if (!G.cameraSnapped) {
     // Snap on the first frame: no opening swoop from the origin, and a
     // ?shot= screenshot is framed exactly as staged, even at low frame rates.
@@ -431,17 +600,25 @@ function updateCamera(dt) {
   } else {
     camera.position.lerp(desired, 1 - Math.pow(0.001, dt));
   }
-  camera.lookAt(new THREE.Vector3(p.x, p.y + params.lookHeight, p.z));
-  if (Math.abs(camera.fov - params.fov) > 0.05) {
-    camera.fov += (params.fov - camera.fov) * Math.min(1, dt * 3);
+  // Round 2: guard the ACTUAL lens, not just the target — after the
+  // lerp the camera can still lag inside a crown while driving.
+  if (Array.isArray(palmSpots) && palmSpots.length && !inSafehouse) {
+    pushLensClearOfPalms(camera.position, palmSpots);
+  }
+  camera.lookAt(new THREE.Vector3(p.x, p.y + lookHeight, p.z));
+  const fovTarget = params.fov + (pursuit ? 5 : 0);
+  if (Math.abs(camera.fov - fovTarget) > 0.05) {
+    camera.fov += (fovTarget - camera.fov) * Math.min(1, dt * 3);
     camera.updateProjectionMatrix();
   }
 }
 
 // ---------------------------------------------------------------- shot mode
 if (query.shot) {
-  const staged = stageShot(query.shot, G);
-  setHudVisible(staged !== 'start' && query.hud !== '0');
+  stageShot(query.shot, G);
+  // Every staged scene ships with the full HUD (hide it only with
+  // &hud=0): the hero frame is a gameplay frame, not a clean wallpaper.
+  setHudVisible(query.hud !== '0');
 } else if (query.hideHud) {
   setHudVisible(false);
 }
@@ -498,6 +675,15 @@ function animate(now) {
     G.gunfireEvent = null;
     updateBullets(dt);
     updateMissions(G, dt);
+    // Specialist-3 live read-outs (heli + vehicle + weapons) for the HUD,
+    // the police panel and the test harness. Cheap plain objects, rebuilt
+    // every frame so the HUD never reads a stale snapshot.
+    updateHelicopter(G, dt);
+    window.SuncoastAir = helicopterState(G);
+    window.SuncoastVehicle = G.currentCar
+      ? vehicleTelemetry(G.currentCar)
+      : { speedKmh: 0, gear: 0, condition: Math.round(G.playerCar.userData.health), nitro01: G._lastNitro01 ?? 1, name: 'ON FOOT' };
+    window.SuncoastWeapons = getWeaponState(G);
     updateCamera(dt);
     // Day/night cycle (see TIME_CYCLE below): slow automatic advance
     // through the time presets, paused in ?shot= mode.
@@ -518,7 +704,19 @@ function animate(now) {
       G.selectWeapon('smg');
       setWeapon(G.player, 'smg');
       G.audio.chime();
-      showToast('SMG ACQUIRED • PRESS 2 TO EQUIP, R TO RELOAD');
+      showToast('SMG ACQUIRED • PRESS 2 TO EQUIP, T TO RELOAD');
+    }
+    // Shotgun pickup.
+    if (!shotgunTaken && G.player.visible && G.player.position.distanceTo(shotgunCrate.position) < 3) {
+      shotgunTaken = true;
+      scene.remove(shotgunCrate);
+      G.hasShotgun = true;
+      G._shotgunReserve = 24;
+      G._shotgunMag = 6;
+      G.selectWeapon('shotgun');
+      setWeapon(G.player, 'shotgun');
+      G.audio.chime();
+      showToast('SHOTGUN ACQUIRED • PRESS 3 TO EQUIP, T TO RELOAD');
     }
     if (G.health <= 0) {
       G.health = 0;
@@ -532,6 +730,11 @@ function animate(now) {
     // Start screen: keep the minimap live behind the card instead of a
     // blank dark canvas.
     drawMinimap(G);
+    // The helicopter also ticks here, so a staged ?shot=chase frame (which
+    // sets wanted 3 without starting the game) still shows SKY-1 on
+    // station; at wanted 0 this is a no-op.
+    updateHelicopter(G, dt);
+    window.SuncoastAir = helicopterState(G);
     camera.position.set(0, 13, 23);
     camera.lookAt(0, 0, 0);
   }
@@ -544,6 +747,7 @@ function animate(now) {
     firstFrame = false;
     window.__ready = true;
     window.__game = G;
+    window.__camera = camera; // test hook: framing measurements (see updateCamera)
     window.dispatchEvent(new Event('suncoast-ready'));
   }
 }

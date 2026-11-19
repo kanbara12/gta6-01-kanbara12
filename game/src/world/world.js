@@ -13,13 +13,20 @@
 //   textures (textures.js) — zero external requests, zero image files.
 //
 // Contracts preserved (main.js / vehicles / characters depend on them):
-//   buildWorld(scene) -> { world, buildings, ocean }
+//   buildWorld(scene) -> { world, buildings, ocean, palmSpots }
+//   palmSpots is the [x, z] list of palm trunks (crowns sit ~6.15 u up,
+//   fronds droop to ~2.2 u) — the camera pull-in guard in main.js reads it.
 //   collidesBuilding(buildings, x, z, r)
 //   hasLineOfSight(buildings, ax, az, bx, bz)
 //   nearestRoadCoord(v)
 //   animateOcean(ocean, t)
 //   buildings entries keep { x, z, hw, hd, h } (+ district/kind extras).
 // New exports: setTimeOfDay(hour 0..24), setWet(amount 0..1).
+// v3 world systems live in sibling modules (imported below, built by
+// buildWorld): boardwalk.js (Starwheel + crowd, G-18), garage.js
+// (repaint bay, G-12), stash.js (5 cash stashes, G-12), safehouse.js
+// (safehouse marker + J save, G-12). Their gameplay binds itself on the
+// 'suncoast-ready' event; this file owns no key handling.
 //
 // Placement rules (hard): every building footprint stays inside its block
 // (|offset| + half-size <= BLOCK_EXTENT = 11, so facades never touch the
@@ -38,6 +45,12 @@ import {
   awningTexture, neonSignTexture, billboardTexture, zebraTexture,
   lighthouseTexture,
 } from './textures.js';
+import { buildBoardwalk, updateBoardwalk } from './boardwalk.js';
+import { buildRepaintBay, bindGarageGameplay, repaints } from './garage.js';
+import { buildStashes, updateStashes, stashes, stashTotal } from './stash.js';
+import {
+  buildSafehouse, bindSafehouseGameplay, safehouseSaveCount,
+} from './safehouse.js';
 
 // ------------------------------------------------------------------ state
 // Module-level environment state, filled by buildWorld(). setTimeOfDay /
@@ -46,6 +59,8 @@ const env = {
   scene: null,
   skyGeo: null,
   sunDisc: null,
+  sunCore: null,
+  glare: null,
   halo: null,
   moon: null,
   windowMat: null,
@@ -143,10 +158,18 @@ function makeSky(scene) {
     vertexColors: true, side: THREE.BackSide, fog: false,
   }));
   scene.add(sky);
-  paintSky(COLOURS.skyTop, COLOURS.skyMid, COLOURS.skyHorizon);
+  // G-09 (v3): the dome opens on the warmed 18.7 sunset keyframe
+  // (constants.js), not the cooler v2 COLOURS — the first frame is
+  // already pink/violet, before any time-of-day call runs.
+  const sunset = DAY_KEYFRAMES.find((k) => k.hour === 18.7) || DAY_KEYFRAMES[6];
+  paintSky(sunset.top, sunset.mid, sunset.horizon);
 
   // Low sun in the west with a soft radial glow and a wide halo, so the
   // glare sits inside the frame of the west-facing screenshot scenes.
+  // G-09 (v3): the disc is BIG (r 40, was 26) with a solid warm core
+  // (r 15) inside it, a wider halo (r 115, was 70) and a horizontal
+  // glare streak — a sprite that always faces the camera — so the
+  // sunset reads as a low burning sun, not a flat orange wash.
   const glowCanvas = document.createElement('canvas');
   glowCanvas.width = 256;
   glowCanvas.height = 256;
@@ -160,18 +183,51 @@ function makeSky(scene) {
   gctx.fillRect(0, 0, 256, 256);
   const glowTex = new THREE.CanvasTexture(glowCanvas);
   env.sunDisc = new THREE.Mesh(
-    new THREE.CircleGeometry(26, 32),
+    new THREE.CircleGeometry(40, 32),
     new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, fog: false, depthWrite: false }),
   );
   env.sunDisc.position.set(-320, 58, -60);
   env.sunDisc.lookAt(0, 40, 0);
+  env.sunDisc.renderOrder = 2;
   scene.add(env.sunDisc);
+  // Solid core: warm white-yellow centre with a soft edge, drawn just in
+  // front of the glow disc so the sun has a hard bright heart.
+  const coreCanvas = document.createElement('canvas');
+  coreCanvas.width = 128;
+  coreCanvas.height = 128;
+  const cctx = coreCanvas.getContext('2d');
+  const cgrad = cctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  cgrad.addColorStop(0, 'rgba(255,248,224,1)');
+  cgrad.addColorStop(0.65, 'rgba(255,216,140,1)');
+  cgrad.addColorStop(1, 'rgba(255,180,90,0)');
+  cctx.fillStyle = cgrad;
+  cctx.fillRect(0, 0, 128, 128);
+  env.sunCore = new THREE.Mesh(
+    new THREE.CircleGeometry(15, 32),
+    new THREE.MeshBasicMaterial({
+      map: new THREE.CanvasTexture(coreCanvas), transparent: true, fog: false, depthWrite: false,
+    }),
+  );
+  env.sunCore.position.set(-320, 58, -59);
+  env.sunCore.lookAt(0, 40, 0);
+  env.sunCore.renderOrder = 3;
+  scene.add(env.sunCore);
+  // Horizontal glare streak: a sprite (always camera-facing) stretched
+  // wide across the sun, so the glare reads from any viewing angle.
+  env.glare = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTex, transparent: true, opacity: 0.5, fog: false, depthWrite: false,
+  }));
+  env.glare.scale.set(300, 60, 1);
+  env.glare.position.set(-320, 58, -60);
+  env.glare.renderOrder = 1;
+  scene.add(env.glare);
   env.halo = new THREE.Mesh(
-    new THREE.CircleGeometry(70, 32),
-    new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, opacity: 0.35, fog: false, depthWrite: false }),
+    new THREE.CircleGeometry(115, 32),
+    new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, opacity: 0.5, fog: false, depthWrite: false }),
   );
   env.halo.position.set(-322, 58, -60);
   env.halo.lookAt(0, 40, 0);
+  env.halo.renderOrder = 1;
   scene.add(env.halo);
   // Pale moon for night hours (hidden at sunset/day, shown by setTimeOfDay).
   const moonCanvas = document.createElement('canvas');
@@ -222,6 +278,42 @@ function makeGround(world) {
       world.add(h);
     }
   }
+
+  // v4: kerbs — a low (0.18 u) concrete ridge at the asphalt edge so the
+  // sidewalk reads as a sidewalk instead of flat green lawn (frame 2).
+  // Segmented between intersections (22 u runs, 7 u clear each side of
+  // every crossing) so no ridge ever cuts across a driving lane or a
+  // zebra crossing. One InstancedMesh, 288 instances, +1 draw call.
+  const kerbDummy = new THREE.Object3D();
+  const kerbGeo = new THREE.BoxGeometry(1, 1, 1);
+  const kerbMat = mat(0x9a938a, 0.95);
+  const kerbCount = 9 * 2 * 8 * 2;
+  const kerbs = new THREE.InstancedMesh(kerbGeo, kerbMat, kerbCount);
+  let ki = 0;
+  for (let road = -144; road <= 144; road += WORLD.grid) {
+    for (const side of [-1, 1]) {
+      for (let k = -4; k < 4; k += 1) {
+        const centre = k * WORLD.grid + 22;
+        // Along the road (vertical): ridge at the asphalt edge.
+        kerbDummy.position.set(road + side * 6.65, 0.09, centre);
+        kerbDummy.rotation.set(0, 0, 0);
+        kerbDummy.scale.set(0.3, 0.18, 22);
+        kerbDummy.updateMatrix();
+        kerbs.setMatrixAt(ki, kerbDummy.matrix);
+        ki += 1;
+        // Across the road (horizontal): same ridge, rotated.
+        kerbDummy.position.set(centre, 0.09, road + side * 6.65);
+        kerbDummy.rotation.set(0, 0, 0);
+        kerbDummy.scale.set(22, 0.18, 0.3);
+        kerbDummy.updateMatrix();
+        kerbs.setMatrixAt(ki, kerbDummy.matrix);
+        ki += 1;
+      }
+    }
+  }
+  kerbs.instanceMatrix.needsUpdate = true;
+  kerbs.receiveShadow = true;
+  world.add(kerbs);
 }
 
 // ------------------------------------------------------------------ roads
@@ -700,13 +792,34 @@ function makeCoast(world, ctx) {
   sand.receiveShadow = true;
   world.add(sand);
   // Dunes: low flattened mounds along the back of the beach.
+  // D-FQA01: a dune must sit on NO asphalt at all — not just the beach
+  // road (x 137.5–150.5) but the cross-roads too (z = 36k ± 6.5, which
+  // run straight across the sand). The old seeded x ≈ 140–143 put all
+  // 8 dunes on the beach road, and a plain west shift still lands most
+  // of them on a cross-road, a waterfront tower or a port stack. Each
+  // dune below was placed by hand against the road grid, the gx=3
+  // towers, the port container stacks and the pier guard (|z| >= 20):
+  // east edge x+r = 137.0 (0.5 clear of the beach-road asphalt) and the
+  // z-footprint clear of every cross-road band, tower and stack. Three
+  // dunes (old i 0, 6, 8) are shrunk to r 2.9 so they fit the narrow
+  // gaps between a cross-road and a stack / tower; the other five keep
+  // their seeded radii. Old i 4/5 stay skipped (pier mouth, 84aa521).
+  // [x, z, r] — x = 137 - r in every row.
+  const DUNE_SPOTS = [
+    [134.10, -131.9, 2.90], // old i=0 — gap A, north of the (132,-125) stack
+    [131.90, 126.0, 5.10], // old i=1 — gap H, between the 108/144 cross-roads
+    [132.71, 157.9, 4.29], // old i=2 — south end of the sand, with old i=7
+    [131.85, 90.0, 5.15], // old i=3 — gap G, between the 72/108 cross-roads
+    [134.10, 54.0, 2.90], // old i=6 — gap F, east of the (126,54) tower
+    [132.39, 172.5, 4.61], // old i=7 — south end of the sand, with old i=2
+    [134.10, -95.9, 2.90], // old i=8 — gap B, north of the (132,-89) stack
+    [132.29, -165.5, 4.71], // old i=9 — north end of the sand, alone
+  ];
   const duneMat = mat(0xe8c48a, 0.95);
-  for (let i = 0; i < 10; i += 1) {
-    const dz = -150 + i * 32 + seeded(500 + i) * 10;
-    if (Math.abs(dz) < 10) continue; // keep the pier approach clear
-    const dune = new THREE.Mesh(new THREE.SphereGeometry(3.5 + seeded(510 + i) * 2, 10, 8), duneMat);
+  for (const [dx, dz, dr] of DUNE_SPOTS) {
+    const dune = new THREE.Mesh(new THREE.SphereGeometry(dr, 10, 8), duneMat);
     dune.scale.set(1, 0.28, 1.6);
-    dune.position.set(140 + seeded(520 + i) * 3, 0.1, dz);
+    dune.position.set(dx, 0.1, dz);
     dune.receiveShadow = true;
     world.add(dune);
   }
@@ -934,25 +1047,65 @@ function makeVegetation(world, ctx) {
   }
   for (let i = 0; i < 6; i += 1) ctx.palmSpots.push([128, 78 + i * 12]);
   for (let i = 0; i < 4; i += 1) ctx.palmSpots.push([128, -78 - i * 12]);
+  // G-10 (v3): close the boardwalk gaps the pier approach left behind.
+  ctx.palmSpots.push([133.5, -20], [133.5, 20]);
+  // G-10 (v3): a double row down the central avenue (the z = 0 pier road),
+  // so a palm line reads in every driving frame. Spots sit 9 units off
+  // the road centreline (sidewalk outer edge, D-QA9 rule) and 18 units
+  // from the nearest cross-road centreline — never on the asphalt.
+  for (const ax of [-126, -90, -54, -18, 18, 54, 90, 126]) {
+    ctx.palmSpots.push([ax, -9], [ax, 9]);
+  }
+  // G-10 (v3): two more on the marina strip, clear of the beach-club huts.
+  ctx.palmSpots.push([128, 66], [128, -66]);
 
   const dummy = new THREE.Object3D();
   // Palm trunks (instanced) — slight lean, deterministic.
   const trunkGeo = new THREE.CylinderGeometry(0.22, 0.38, 5.4, 6);
   const trunkMat = mat(0x7a5230, 0.95);
   const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, ctx.palmSpots.length);
-  // Palm crowns (D-QA5): a layered, volumetric crown — a rounded core plus
-  // six drooping fronds (instanced cones) around it. The old single
-  // icosahedron squashed to 0.42 height read as a flat green disc
-  // ("lollipop") from low angles; the fronds break the disc silhouette
-  // from every angle. +2 draw calls, ~+2.8k triangles for the whole city.
-  const crownGeo = new THREE.IcosahedronGeometry(1.7, 1);
-  const crownMat = mat(0x2f7a4a, 0.9);
+  // Palm crowns (v4 visual fix — replaces the G-10 v3 "ball + sticks"):
+  // the old core (r 1.35 smooth ball) + 8 straight thin cones read as a
+  // green ball on a stick / spider in every frame (Hydrogen: frames 2/4).
+  // New crown: a SMALL dark hub (r 0.85, mostly hidden) + FOURTEEN
+  // curved blades in two rings — 8 steep blades drooping ~55 deg below
+  // horizontal, 6 flatter blades at ~32 deg — each blade a cone bent so
+  // the tip curls down instead of stabbing straight out, flattened into
+  // a blade, in two greens. Trunk positions are UNCHANGED.
+  // Reach: the longest blade tip sits ~3.2 u out from the trunk (bent
+  // arc, less than the straight-line figure), so the D-QA04 lens guard
+  // (3.5 u) still clears every crown — re-measured in the fix verify.
+  const crownGeo = new THREE.IcosahedronGeometry(0.85, 1);
+  const crownMat = mat(0x1f5c33, 0.9);
   const crowns = new THREE.InstancedMesh(crownGeo, crownMat, ctx.palmSpots.length);
-  const frondGeo = new THREE.ConeGeometry(0.55, 3.0, 5);
-  const frondMat = mat(0x357f52, 0.9);
-  const fronds = new THREE.InstancedMesh(frondGeo, frondMat, ctx.palmSpots.length * 6);
-  const UP = new THREE.Vector3(0, 1, 0);
+  // Curved blade: a 5-sided cone whose vertices are bent toward -X
+  // (the tip curls down once the basis below maps -X to the droop
+  // plane). The wide base (r 0.34) sits at the crown, the thin apex is
+  // the tip; the tip tangent rotates ~30 deg from the base direction.
+  const frondGeo = new THREE.ConeGeometry(0.34, 4.6, 5, 6);
+  {
+    const pos = frondGeo.attributes.position;
+    for (let vi = 0; vi < pos.count; vi += 1) {
+      const y = pos.getY(vi);
+      const t = (y + 2.3) / 4.6; // 0 at the base, 1 at the tip
+      pos.setX(vi, pos.getX(vi) - 1.35 * t * t);
+    }
+    pos.needsUpdate = true;
+    frondGeo.computeVertexNormals();
+  }
+  const frondMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
+  const RING_A = 8; // steep droop, ~55 deg below horizontal
+  const RING_B = 6; // flatter ring, ~32 deg below horizontal
+  const FRONDS_PER_PALM = RING_A + RING_B;
+  const fronds = new THREE.InstancedMesh(frondGeo, frondMat, ctx.palmSpots.length * FRONDS_PER_PALM);
   const frondDir = new THREE.Vector3();
+  const radial = new THREE.Vector3();
+  const basisX = new THREE.Vector3();
+  const basisZ = new THREE.Vector3();
+  const basisM = new THREE.Matrix4();
+  const frondGreenA = new THREE.Color(0x2e7d46);
+  const frondGreenB = new THREE.Color(0x4c9a5f);
+  const frondCol = new THREE.Color();
   ctx.palmSpots.forEach(([x, z], i) => {
     const lean = (seeded(800 + i) - 0.5) * 0.14;
     dummy.position.set(x, 2.7, z);
@@ -960,22 +1113,46 @@ function makeVegetation(world, ctx) {
     dummy.scale.set(1, 1, 1);
     dummy.updateMatrix();
     trunks.setMatrixAt(i, dummy.matrix);
-    dummy.position.set(x + lean * 8, 6.0, z);
+    const cx = x + lean * 8;
+    const cz = z;
+    dummy.position.set(cx, 6.05, cz);
     dummy.rotation.set(0, seeded(820 + i) * Math.PI, 0);
-    dummy.scale.set(1, 0.85, 1);
+    dummy.scale.set(1, 0.7, 1);
     dummy.updateMatrix();
     crowns.setMatrixAt(i, dummy.matrix);
     const phase = seeded(830 + i) * 0.9;
-    for (let k = 0; k < 6; k += 1) {
-      const a = (k * Math.PI) / 3 + phase;
-      const ca = Math.cos(a);
-      const sa = Math.sin(a);
-      frondDir.set(ca * 0.85, -0.45, sa * 0.85).normalize();
-      dummy.position.set(x + lean * 8 + ca * 1.05, 6.05, z + sa * 1.05);
-      dummy.quaternion.setFromUnitVectors(UP, frondDir);
-      dummy.scale.set(1, 1, 1);
-      dummy.updateMatrix();
-      fronds.setMatrixAt(i * 6 + k, dummy.matrix);
+    let f = 0;
+    // Two rings: [count, droopDeg, bladeLen, centreOffsetAlongDroop]
+    for (const [count, droopDeg, len, centre] of [
+      [RING_A, 55, 4.6, 2.0],
+      [RING_B, 32, 3.9, 1.65],
+    ]) {
+      const droop = (droopDeg * Math.PI) / 180;
+      const cd = Math.cos(droop);
+      const sd = Math.sin(droop);
+      for (let k = 0; k < count; k += 1, f += 1) {
+        const a = (k * Math.PI * 2) / count + phase + (count === RING_B ? Math.PI / count : 0);
+        const ca = Math.cos(a);
+        const sa = Math.sin(a);
+        // Droop direction (unit): out-and-down in the radial plane.
+        frondDir.set(ca * cd, -sd, sa * cd);
+        radial.set(ca, 0, sa);
+        // Basis: Y = droop dir, X = radial component perpendicular to Y
+        // (points out-and-up in the radial plane, so the baked -X bend
+        // curls the tip DOWN), Z = X x Y, flattened to a blade.
+        basisX.copy(radial).addScaledVector(frondDir, -radial.dot(frondDir)).normalize();
+        basisZ.crossVectors(basisX, frondDir);
+        const lenScale = (len / 4.6) * (0.92 + seeded(860 + i * 14 + f) * 0.16);
+        basisM.makeBasis(
+          basisX.clone(),
+          frondDir.clone().multiplyScalar(lenScale),
+          basisZ.clone().multiplyScalar(0.45),
+        );
+        basisM.setPosition(cx + frondDir.x * centre, 6.05 + frondDir.y * centre, cz + frondDir.z * centre);
+        fronds.setMatrixAt(i * FRONDS_PER_PALM + f, basisM);
+        frondCol.copy(frondGreenA).lerp(frondGreenB, seeded(880 + i * 14 + f));
+        fronds.setColorAt(i * FRONDS_PER_PALM + f, frondCol);
+      }
     }
   });
   trunks.castShadow = true;
@@ -984,6 +1161,7 @@ function makeVegetation(world, ctx) {
   trunks.instanceMatrix.needsUpdate = true;
   crowns.instanceMatrix.needsUpdate = true;
   fronds.instanceMatrix.needsUpdate = true;
+  if (fronds.instanceColor) fronds.instanceColor.needsUpdate = true;
   world.add(trunks);
   world.add(crowns);
   world.add(fronds);
@@ -1137,11 +1315,14 @@ function makeStreetFurniture(world) {
   }
   // Rooftop / pylon billboards (original copy) at four residential block
   // centres — clear of roads, mission points and ?shot= staging.
+  // G-18 (v3): the beach board reads 'VISIT / SUNSET COVE' and a fifth
+  // board, REEF CASINO, stands on the north side.
   const billboards = [
     { lines: ['SUNCOAST', 'HEATLINE'], bg: '#1c0f2a', fg: '#ff4d8d', x: -126, z: -90 },
-    { lines: ['VISIT', 'CORAL SHORE'], bg: '#0a2030', fg: '#33e0ff', x: 90, z: 126 },
+    { lines: ['VISIT', 'SUNSET COVE'], bg: '#0a2030', fg: '#33e0ff', x: 90, z: 126 },
     { lines: ['PALM COLA', 'ICE COLD'], bg: '#2a0f1c', fg: '#ffc44d', x: -126, z: 126 },
     { lines: ['DRIVE THE', 'COAST'], bg: '#101a2a', fg: '#a7f36c', x: 54, z: 126 },
+    { lines: ['REEF', 'CASINO'], bg: '#2a0f1c', fg: '#ffc44d', x: -54, z: -126 },
   ];
   for (const b of billboards) {
     const g = new THREE.Group();
@@ -1307,7 +1488,43 @@ export function buildWorld(scene) {
   makeStreetFurniture(world);
   makeRain(world);
 
-  return { world, buildings, ocean };
+  // ---- v3 world systems (G-12 / G-18): Starwheel + boardwalk crowd,
+  // repaint bay, stashes, safehouse. Visuals are built here; the
+  // gameplay binds itself on 'suncoast-ready' (see each module).
+  const boardwalkState = buildBoardwalk(world, buildings);
+  buildRepaintBay(world);
+  const stashState = buildStashes(world);
+  buildSafehouse(world);
+  bindGarageGameplay();
+  bindSafehouseGameplay();
+  // QA / debug handle (read-only counters + live state, no game logic).
+  if (typeof window !== 'undefined') {
+    window.__suncoastWorld = {
+      repaints,
+      stashes,
+      stashTotal,
+      safehouseSaves: safehouseSaveCount,
+      palms: () => ctx.palmSpots.length,
+      frondsPerPalm: 8,
+      boardwalkWalkers: () => boardwalkState.walkers.length,
+      starwheelAngle: () => boardwalkState.wheel.rotation.x,
+    };
+  }
+  // One shared ticker for the world-owned animation (wheel, walkers,
+  // stash bob/collect). Independent of main.js's loop; dt is clamped
+  // so a backgrounded tab never jumps the wheel a quarter turn.
+  let lastTick = -1;
+  const tickWorld = (now) => {
+    const t = now / 1000;
+    const dt = lastTick < 0 ? 0 : Math.min(t - lastTick, 0.1);
+    lastTick = t;
+    updateBoardwalk(boardwalkState, dt, t);
+    updateStashes(stashState, dt, t);
+    requestAnimationFrame(tickWorld);
+  };
+  requestAnimationFrame(tickWorld);
+
+  return { world, buildings, ocean, palmSpots: ctx.palmSpots };
 }
 
 // ------------------------------------------------------------------ API contract
@@ -1405,8 +1622,13 @@ export function setTimeOfDay(hour) {
   const isDay = h >= 6 && h <= 19.5;
   env.sunDisc.visible = isDay;
   env.halo.visible = isDay;
+  env.sunCore.visible = isDay;
+  env.glare.visible = isDay;
   env.sunDisc.position.set(sx, sy, -60);
   env.sunDisc.lookAt(0, 40, 0);
+  env.sunCore.position.set(sx, sy, -59);
+  env.sunCore.lookAt(0, 40, 0);
+  env.glare.position.set(sx, sy, -60);
   env.halo.position.set(sx * 1.01, sy, -60);
   env.halo.lookAt(0, 40, 0);
   env.moon.visible = !isDay;

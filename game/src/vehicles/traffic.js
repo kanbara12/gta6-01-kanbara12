@@ -46,7 +46,10 @@ export function spawnTrafficCars(scene, seed = 21) {
   const rng = mulberry32(seed);
   const traffic = [];
   for (let i = 0; i < 18; i += 1) {
-    const type = pickType(rng);
+    // The hero coupe must always be stealable: car 0 is always a sports
+    // car, so traffic can never roll with zero sports cars (the random
+    // draw alone left a ~15% chance of none at all).
+    const type = i === 0 ? 'sports' : pickType(rng);
     const axis = rng() < 0.5 ? 'x' : 'z';
     const dir = rng() < 0.5 ? 1 : -1;
     const road = (Math.floor(rng() * 9) - 4) * WORLD.grid; // -144..144

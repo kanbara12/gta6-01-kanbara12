@@ -2,7 +2,8 @@
 // One clear job: turn player input into believable car motion — engine
 // torque curve, braking / reverse, speed-sensitive steering, grip + handbrake
 // drift, spring-damper suspension (pitch on accel/brake, roll in turns),
-// collision bounce + damage, and the camera parameters the chase cam uses.
+// collision bounce + damage, nitro boost (Shift), drift / near-miss score
+// events, and the camera parameters the chase cam uses.
 //
 // This module NEVER touches the DOM or the network and NEVER edits main.js:
 // the coordinator wires it in with the exact snippet in INTEGRATION.md.
@@ -21,6 +22,7 @@ function getDrive(car) {
       steerAngle: 0, pitch: 0, roll: 0, pitchVel: 0, rollVel: 0,
       drift: 0, braking: false, reversing: false, lastAccel: 0,
       yawRate: 0, collided: false, impact: 0,
+      nitro01: 1, driftTime: 0,
     };
   }
   return u.drive;
@@ -85,8 +87,8 @@ function otherCars(car, env) {
  * Drive one car for one frame.
  *
  * @param {THREE.Group} car — a makeVehicle()/makeCar() group.
- * @param {object} input — { forward, back, left, right, handbrake } booleans
- *   (W/S/A/D + Space). `forward`/`back` may also be 0..1 magnitudes.
+ * @param {object} input — { forward, back, left, right, handbrake, nitro } booleans
+ *   (W/S/A/D + Space handbrake + Shift nitro). `forward`/`back` may also be 0..1 magnitudes.
  * @param {number} dt — frame time, seconds (clamped to 0.05 inside).
  * @param {object} [env] — { collides(x, z, r): boolean, bounds,
  *   collidesCars?: Array<THREE.Group> }.
@@ -94,13 +96,19 @@ function otherCars(car, env) {
  *   only respects the world bounds (traffic never needs it, the player does).
  *   collidesCars lists the traffic + police cars to collide with; when
  *   omitted, the driven car's scene siblings that are vehicles are used.
- * @returns {{ collided: boolean, impact: number, speed: number, braking: boolean }}
+ * @returns {{ collided: boolean, impact: number, speed: number, braking: boolean,
+ *   nitro: boolean, nitro01: number,
+ *   events: Array<{type: 'drift'|'near-miss', label: string, amount: number}> }}
+ *   `events` carries at most one payout per slide / per close pass; the
+ *   caller (main.js) banks the cash and toasts it — this module never
+ *   touches money or the DOM.
  */
 export function driveVehicle(car, input, dt, env = {}) {
   const u = car.userData;
   const spec = u.spec;
   const d = getDrive(car);
   dt = clamp(dt, 0, 0.05);
+  const events = [];
 
   const throttle = input.forward ? 1 : 0;
   const wantReverse = !!input.back;
@@ -109,8 +117,15 @@ export function driveVehicle(car, input, dt, env = {}) {
 
   // --- damage degrades the car: slower, weaker, pulls to one side ---
   const dmg = u.damage || 0;
-  const topSpeed = spec.topSpeed * (1 - 0.42 * dmg);
-  const accel = spec.accel * (1 - 0.5 * dmg);
+  // --- nitro (Shift): a short boost that lifts the top speed ~10% and
+  // hardens acceleration while the tank lasts; it refills slowly when off.
+  // Only works with the throttle down and the car already rolling, so a
+  // parked car cannot burn the tank.
+  const nitro = !!input.nitro && (d.nitro01 ?? 1) > 0.02 && !!input.forward && (u.speed || 0) > 3;
+  if (nitro) d.nitro01 = Math.max(0, (d.nitro01 ?? 1) - dt * 0.22);
+  else d.nitro01 = Math.min(1, (d.nitro01 ?? 1) + dt * 0.05);
+  const topSpeed = spec.topSpeed * (1 - 0.42 * dmg) * (nitro ? 1.10 : 1);
+  const accel = spec.accel * (1 - 0.5 * dmg) * (nitro ? 1.35 : 1);
   const grip = spec.grip * (1 - 0.3 * dmg);
   const steerPull = dmg * 0.1 * (u.damageSide || 1); // rad/s bias while moving
 
@@ -157,6 +172,20 @@ export function driveVehicle(car, input, dt, env = {}) {
   yawRate = clamp(yawRate, -2.6, 2.6);
   d.yawRate = yawRate;
   car.rotation.y += (yawRate + steerPull * Math.sign(speed || 1) * (Math.abs(speed) > 1 ? 1 : 0)) * dt;
+
+  // --- drift scoring: handbrake + speed + yaw held for 0.5 s or more
+  // banks one payout when the slide ends (one event per slide, never per
+  // frame, so a long slide pays once at its true length).
+  const drifting = handbrake && Math.abs(speed) > 6 && Math.abs(yawRate) > 0.4;
+  if (drifting) {
+    d.driftTime = (d.driftTime || 0) + dt;
+  } else if ((d.driftTime || 0) >= 0.5) {
+    const mult = Math.min(4, 1 + Math.floor(d.driftTime));
+    events.push({ type: 'drift', label: `DRIFT x${mult}`, amount: 50 * mult + 50 });
+    d.driftTime = 0;
+  } else {
+    d.driftTime = 0;
+  }
 
   // --- suspension: pitch (dive/squat) + roll, spring-damper toward target ---
   const pitchTarget = clamp(-longitudinalAccel * 0.012, -0.055, 0.07);
@@ -205,6 +234,30 @@ export function driveVehicle(car, input, dt, env = {}) {
     car.position.x = nx;
     car.position.z = nz;
   }
+  // --- near-miss scoring: a fast pass that comes within 6 units
+  // laterally of another car — an adjacent-lane pass, an overtake, a
+  // close swerve — pays out once per car per 3 s. Same-lane followers
+  // (lateral offset ~0) never count: that is following, not a near miss.
+  // (Centre distance alone would miss every adjacent-lane pass: lanes
+  // are 5.4 apart, so the test is along/side in the car's own frame.)
+  if (Math.abs(speed) > 12 && !collided) {
+    const nowMs = performance.now();
+    const fx = Math.sin(car.rotation.y);
+    const fz = Math.cos(car.rotation.y);
+    const myBox = carRect(car, car.position.x, car.position.z);
+    for (const o of others) {
+      if (!o.userData) continue;
+      const dx = o.position.x - car.position.x;
+      const dz = o.position.z - car.position.z;
+      const along = dx * fx + dz * fz;
+      const side = Math.abs(dx * fz - dz * fx);
+      if (Math.abs(along) >= 5 || side < 2.0 || side >= 6.0) continue;
+      if (nowMs - (o.userData._nmAt || 0) < 3000) continue;
+      if (rectsOverlap(myBox, carRect(o, o.position.x, o.position.z))) continue;
+      o.userData._nmAt = nowMs;
+      events.push({ type: 'near-miss', label: 'NEAR MISS', amount: 250 });
+    }
+  }
   u.speed = speed;
   d.collided = collided;
   d.impact = impact;
@@ -212,7 +265,7 @@ export function driveVehicle(car, input, dt, env = {}) {
   // --- visuals: wheels, steer, body lean, brake lights ---
   updateVehicleVisuals(car, dt, steerInput);
   setBrakeLights(car, d.braking || (handbrake && Math.abs(speed) > 1));
-  return { collided, impact, speed, braking: d.braking };
+  return { collided, impact, speed, braking: d.braking, nitro, nitro01: d.nitro01 ?? 1, events };
 }
 
 /**
@@ -294,4 +347,36 @@ export function smoothCameraParams(prev, target, dt) {
 /** Reset a car's drive state (used on enter/exit and on repair). */
 export function resetDriveState(car) {
   if (car.userData) car.userData.drive = null;
+}
+
+/**
+ * Gear from road speed (km/h): 1 below 30, 2 below 60, 3 below 95,
+ * 4 below 130, 5 above — so the hero coupe sits in 5th at ~162 KM/H
+ * and stays there on nitro (~176 KM/H). 0 means parked / neutral.
+ */
+export function gearForSpeed(kmh) {
+  if (kmh <= 0) return 0;
+  if (kmh < 30) return 1;
+  if (kmh < 60) return 2;
+  if (kmh < 95) return 3;
+  if (kmh < 130) return 4;
+  return 5;
+}
+
+/**
+ * Live HUD read-out for the driven car (window.SuncoastVehicle): honest
+ * km/h (speed * 3.6, the same factor the speedometer math uses), gear,
+ * condition %, nitro tank 0..1, and the model name from the spec.
+ */
+export function vehicleTelemetry(car) {
+  const u = (car && car.userData) || {};
+  const spec = u.spec || {};
+  const speedKmh = Math.round(Math.abs(u.speed || 0) * 3.6);
+  return {
+    speedKmh,
+    gear: gearForSpeed(speedKmh),
+    condition: Math.round(u.health ?? 100),
+    nitro01: Math.round(((u.drive && u.drive.nitro01) ?? 1) * 100) / 100,
+    name: spec.name || spec.label || 'Sedan',
+  };
 }

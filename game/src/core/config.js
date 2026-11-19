@@ -39,15 +39,18 @@ export const lerp = (a, b, t) => a + (b - a) * t;
 
 /**
  * Time-of-day presets (rendering.js). `golden` reproduces the shipped look
- * exactly (sun -65,110,45, fog 105–320, exposure 1.08); the others are
- * the day/night cycle. sunPos is the sun offset direction from the actor;
- * the shadow frustum follows the actor, so the values stay small and tight.
+ * exactly (sun -65,110,45, fog 105–320, exposure 1.14); the others are
+ * the day/night cycle. The sunset presets carry the warmed grade here —
+ * fog, background and exposure — so the opening frame and every 1.5 s
+ * transition lerp toward the same warm light instead of cooling back
+ * down. sunPos is the sun offset direction from the actor; the shadow
+ * frustum follows the actor, so the values stay small and tight.
  */
 export const TIME_PRESETS = {
   golden: {
     label: 'Golden Hour', sun: 0xffe1b2, sunIntensity: 2.4, sunPos: [-65, 110, 45],
     hemiSky: 0xd9f5ff, hemiGround: 0x38404a, hemiIntensity: 2.0, fillIntensity: 0.7,
-    fog: 0x9fc4cf, fogNear: 105, fogFar: 320, exposure: 1.08, bg: 0x87b7c8,
+    fog: 0xdf9a7e, fogNear: 105, fogFar: 320, exposure: 1.14, bg: 0xd98a68,
     ocean: 0x27617f, oceanRoughness: 0.25, oceanMetalness: 0.35,
   },
   noon: {
@@ -59,7 +62,7 @@ export const TIME_PRESETS = {
   dusk: {
     label: 'Dusk', sun: 0xff8a4d, sunIntensity: 1.9, sunPos: [-110, 42, 20],
     hemiSky: 0x8a6a9e, hemiGround: 0x2e2438, hemiIntensity: 1.3, fillIntensity: 0.45,
-    fog: 0xd96a72, fogNear: 80, fogFar: 260, exposure: 1.12, bg: 0x5a3a5e,
+    fog: 0xcf5a6a, fogNear: 80, fogFar: 260, exposure: 1.16, bg: 0x5a3a5e,
     ocean: 0x1d4258, oceanRoughness: 0.12, oceanMetalness: 0.6,
   },
   night: {

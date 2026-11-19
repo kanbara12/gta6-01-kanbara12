@@ -17,13 +17,13 @@ import {
   makeVehicle, setBrakeLights, setHeadlights, attachHeadlightBeams,
   applyDamage, repairVehicle, loadVehicleGLB, VEHICLE_TYPES,
 } from './models.js';
-import { driveVehicle, updateVehicleVisuals, vehicleCameraParams, smoothCameraParams } from './driving.js';
+import { driveVehicle, updateVehicleVisuals, vehicleCameraParams, smoothCameraParams, vehicleTelemetry, gearForSpeed } from './driving.js';
 import { spawnTrafficCars, updateTrafficCars, laneOffset } from './traffic.js';
 
 export {
   makeVehicle, setBrakeLights, setHeadlights, attachHeadlightBeams,
   applyDamage, repairVehicle, loadVehicleGLB, VEHICLE_TYPES,
-  driveVehicle, vehicleCameraParams, smoothCameraParams,
+  driveVehicle, vehicleCameraParams, smoothCameraParams, vehicleTelemetry, gearForSpeed,
   spawnTrafficCars, updateTrafficCars, laneOffset,
 };
 
@@ -48,9 +48,18 @@ export function spawnTraffic(scene, seed = 21) {
   return spawnTrafficCars(scene, seed);
 }
 
-/** Lane-aware traffic update (spacing, intersections, yield, turns, overtake). */
+/**
+ * Lane-aware traffic update (spacing, intersections, yield, turns, overtake).
+ * The car the player is driving is taken OUT of the AI list for this frame:
+ * its own controller owns it, so the traffic AI never steers, brakes or
+ * lane-snaps against the player's input. The other cars still treat it as
+ * an obstacle through the playerCar argument (nearestAhead + yield), and
+ * the driven car rejoins the AI the moment the player steps out — the
+ * filter only applies to this call, the G.traffic array is untouched.
+ */
 export function updateTraffic(traffic, playerCar, dt) {
-  updateTrafficCars(traffic, playerCar, dt);
+  const driven = playerCar && traffic.includes(playerCar) ? playerCar : null;
+  updateTrafficCars(driven ? traffic.filter((c) => c !== driven) : traffic, playerCar, dt);
 }
 
 /**

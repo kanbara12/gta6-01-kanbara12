@@ -27,6 +27,18 @@ export function saveGame(G) {
     kills: G.kills,
     weapon: G.weapon.id,
     ammoMag: G.weapon.mag,
+    // v3: the 8-stage chain (0..7) + the shotgun's reserve, so a save made
+    // on stage 6-7 or with a half-spent shotgun loads back exactly.
+    hasShotgun: !!G.hasShotgun,
+    shotgunReserve: G._shotgunReserve ?? 24,
+    shotgunMag: G._shotgunMag ?? 6,
+    // v3 fix (D-QA05): the SMG's ownership + ammo, and the bat flag, so a
+    // save made while the pistol is out still loads the SMG back. The live
+    // weapon's mag/reserve win when the SMG is the active weapon.
+    hasSmg: !!G.hasSmg,
+    smgReserve: G.weapon.id === 'smg' ? G.weapon.reserve : (G._smgReserve ?? 120),
+    smgMag: G.weapon.id === 'smg' ? G.weapon.mag : (G._smgMag ?? 30),
+    hasBat: !!G.hasBat,
   };
   localStorage.setItem(SAVE_KEY, JSON.stringify(data));
   G.showToast('GAME SAVED LOCALLY');
@@ -43,8 +55,24 @@ export function loadGame(G) {
     G.money = d.money ?? 1250;
     G.health = d.health ?? 100;
     G.wanted = d.wanted ?? 0;
-    G.missionIndex = clamp(d.missionIndex ?? 0, 0, 5);
+    G.missionIndex = clamp(d.missionIndex ?? 0, 0, 7);
     G.kills = d.kills ?? 0;
+    // Shotgun ownership + reserve restore before the weapon is selected,
+    // so a saved shotgun comes back with its real ammo, not a fresh 24 —
+    // and a save that never had the shotgun cannot smuggle one in.
+    G.hasShotgun = !!d.hasShotgun;
+    G._shotgunReserve = d.shotgunReserve ?? 24;
+    G._shotgunMag = d.shotgunMag ?? 6;
+    if (d.weapon === 'shotgun' && !G.hasShotgun) d.weapon = 'pistol';
+    // SMG ownership + ammo restore before the weapon is selected, mirroring
+    // the shotgun above — a saved SMG comes back even when the pistol was
+    // the active weapon at save time, and an old save without the flag
+    // cannot smuggle an SMG in.
+    G.hasSmg = !!d.hasSmg;
+    G._smgReserve = d.smgReserve ?? 120;
+    G._smgMag = d.smgMag ?? 30;
+    G.hasBat = d.hasBat !== undefined ? !!d.hasBat : true;
+    if (d.weapon === 'smg' && !G.hasSmg) d.weapon = 'pistol';
     if (d.weapon) G.selectWeapon(d.weapon, d.ammoMag);
     if (d.driving && d.drivingCar === 'player') {
       G.currentCar = G.playerCar;

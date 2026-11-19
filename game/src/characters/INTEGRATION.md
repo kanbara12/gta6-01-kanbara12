@@ -12,10 +12,11 @@
   skinned mesh, 10 AnimationMixer clips:
   `idle, walk, run, sprint, jump, aim, shoot, reload, enter_car, exit_car`.
   Height ~1.80, origin at the feet, faces +Z in three.js. All original art.
-- `game/vendor/GLTFLoader.js` + `game/vendor/utils/{BufferGeometryUtils,
-  SkeletonUtils}.js` — vendored from three.js 0.187.0 (same version as
-  `vendor/three.module.min.js`). Only the two relative import paths inside
-  `GLTFLoader.js` were changed (`../utils/` -> `./utils/`). The import map
+- `game/vendor/GLTFLoader.min.js` + `game/vendor/utils/{BufferGeometryUtils,
+  SkeletonUtils}.min.js` — vendored from three.js 0.187.0 (same version as
+  `vendor/three.module.min.js`), minified with esbuild. Only the two relative
+  import paths inside `GLTFLoader.min.js` were changed (`../utils/` ->
+  `./utils/`, plus `.js` -> `.min.js`). The import map
   already maps `three`, so the loader resolves with no other change.
 
 ## Contract (unchanged — main.js needs no edit for locomotion)

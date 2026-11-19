@@ -3,9 +3,9 @@
 Vehicle Physics Specialist, recording 3 (`01a1eb19`). Files owned by this
 partition: `game/src/vehicles/models.js`, `driving.js`, `traffic.js`,
 `vehicles.js` (public API), `INTEGRATION.md` (this file), plus the vendored
-`game/vendor/GLTFLoader.js` + `game/vendor/utils/{BufferGeometryUtils,
-SkeletonUtils}.js` (three 0.187.0, copied verbatim from
-`~/workspace/tmp-clones/three.js/examples/jsm/` — GLTFLoader needs both
+`game/vendor/GLTFLoader.min.js` + `game/vendor/utils/{BufferGeometryUtils,
+SkeletonUtils}.min.js` (three 0.187.0, minified with esbuild from the files
+copied verbatim from `~/workspace/tmp-clones/three.js/examples/jsm/` — GLTFLoader needs both
 utils; the Character Specialist may import the same files, do not duplicate).
 
 ## What was built

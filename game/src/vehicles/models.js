@@ -3,7 +3,7 @@
 // Group (bodywork, cabin glass, wheels + rims, bumpers, grille, mirrors,
 // lights) — all local geometry, zero external assets, zero network requests.
 // GLB files, when the art pass supplies them, load through the vendored
-// GLTFLoader (game/vendor/GLTFLoader.js, three 0.187.0) via loadVehicleGLB()
+// GLTFLoader (game/vendor/GLTFLoader.min.js, three 0.187.0) via loadVehicleGLB()
 // and are then wrapped with the same userData contract.
 //
 // Visual direction (reference only, nothing copied): sunset coastal city,
@@ -13,35 +13,42 @@
 import * as THREE from 'three';
 import { clamp } from '../core/config.js';
 
-/** Per-type tuning. Units are world units / seconds (1 unit ≈ 1 m). */
+/**
+ * Per-type tuning. Units are world units / seconds (1 unit ≈ 1 m).
+ * `name` is the in-world model name shown in the HUD/speedometer — all
+ * original SUNCOAST names (the old sedan name collided with another
+ * entry's car, so every class carries its own name now).
+ * Top speeds are honest: speedKmh = speed * 3.6, so the sports coupe's
+ * 48 u/s top speed reads ~162 KM/H at full tilt (gear 5).
+ */
 export const VEHICLE_TYPES = {
   sedan: {
-    label: 'Sedan', topSpeed: 26, accel: 13, brake: 28, reverseTop: 11,
+    label: 'Sedan', name: 'PALMERA', topSpeed: 26, accel: 13, brake: 28, reverseTop: 11,
     steerMax: 0.55, wheelbase: 2.7, length: 4.25, width: 2.15, height: 1.9,
     grip: 1.0, camDist: 9.0, camHeight: 4.8,
   },
   suv: {
-    label: 'SUV', topSpeed: 24, accel: 10.5, brake: 26, reverseTop: 10,
+    label: 'SUV', name: 'DUNEHAWK', topSpeed: 24, accel: 10.5, brake: 26, reverseTop: 10,
     steerMax: 0.5, wheelbase: 2.9, length: 4.6, width: 2.25, height: 2.15,
     grip: 0.95, camDist: 9.6, camHeight: 5.2,
   },
   truck: {
-    label: 'Pickup', topSpeed: 21, accel: 8.5, brake: 24, reverseTop: 9,
+    label: 'Pickup', name: 'TIDEHAULER', topSpeed: 21, accel: 8.5, brake: 24, reverseTop: 9,
     steerMax: 0.46, wheelbase: 3.4, length: 5.4, width: 2.2, height: 2.1,
     grip: 0.9, camDist: 10.4, camHeight: 5.6,
   },
   sports: {
-    label: 'Sports', topSpeed: 33, accel: 16, brake: 32, reverseTop: 12,
+    label: 'Sports', name: 'HEATLINE GT', topSpeed: 48, accel: 20, brake: 32, reverseTop: 12,
     steerMax: 0.5, wheelbase: 2.6, length: 4.1, width: 2.1, height: 1.55,
     grip: 1.15, camDist: 9.8, camHeight: 4.4,
   },
   taxi: {
-    label: 'Taxi', topSpeed: 26, accel: 13, brake: 28, reverseTop: 11,
+    label: 'Taxi', name: 'SUNCAB', topSpeed: 26, accel: 13, brake: 28, reverseTop: 11,
     steerMax: 0.55, wheelbase: 2.7, length: 4.25, width: 2.15, height: 1.95,
     grip: 1.0, camDist: 9.0, camHeight: 4.8,
   },
   police: {
-    label: 'Police', topSpeed: 27, accel: 13.5, brake: 30, reverseTop: 11,
+    label: 'Police', name: 'INTERCEPTOR', topSpeed: 27, accel: 13.5, brake: 30, reverseTop: 11,
     steerMax: 0.55, wheelbase: 2.7, length: 4.25, width: 2.15, height: 1.95,
     grip: 1.05, camDist: 9.0, camHeight: 4.8,
   },
@@ -378,7 +385,7 @@ export function repairVehicle(car) {
  */
 export async function loadVehicleGLB(path, type = 'sedan') {
   if (/^https?:\/\//i.test(path)) throw new Error('loadVehicleGLB: remote URLs are forbidden: ' + path);
-  const { GLTFLoader } = await import('../../vendor/GLTFLoader.js');
+  const { GLTFLoader } = await import('../../vendor/GLTFLoader.min.js');
   const loader = new GLTFLoader();
   const gltf = await loader.loadAsync(path);
   const g = gltf.scene;

@@ -1,3 +1,5 @@
+import { createRadio } from './radio.js';
+
 // Original WebAudio sound engine for SUNCOAST: HEATLINE.
 // One clear job: every sound is synthesised live with oscillators and filtered
 // noise — no audio files, no network. Silent until the player's first gesture
@@ -42,6 +44,11 @@ export class AudioEngine {
     this.melodyIdx = 2;
     this.lastStep = 0;
     this.lastHorn = 0;
+    // Suncoast radio (radio.js): 3 original stations; the radio owns the
+    // music loop once attached (see ensure / setMusicEnabled). The chip and
+    // window.SuncoastRadio exist from construction, audio starts on attach.
+    this.radio = createRadio(this);
+    if (typeof window !== 'undefined') window.SuncoastRadio = this.radio;
   }
 
   /** SFX output bus (falls back to master before ensure()). */
@@ -69,6 +76,8 @@ export class AudioEngine {
     this.startEngine();
     if (this.musicOn) this.startMusic();
     if (this.rainLevel > 0) this._startRainNodes();
+    // Radio takes over the music loop once the context exists.
+    if (this.radio) this.radio.attach();
   }
 
   setMuted(muted) {
@@ -168,6 +177,11 @@ export class AudioEngine {
   setMusicEnabled(on) {
     this.musicOn = !!on;
     if (!this.ctx) return;
+    // Once the radio is attached it owns the music loop; the toggle drives it.
+    if (this.radio && this.radio.attached) {
+      this.radio.setEnabled(this.musicOn);
+      return;
+    }
     if (this.musicOn) this.startMusic();
     else this.stopMusic();
   }
